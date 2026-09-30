@@ -51,6 +51,26 @@ function mergeAssignments(prev: UnitAssignment[], next: UnitAssignment[]): UnitA
   return [...map.values()];
 }
 
+/** Короткий перелік позицій, за які платить людина (для екрана результату). */
+function itemsForPerson(personId: string, receipt: Receipt, assignments: UnitAssignment[]): string {
+  const byUnit = new Map(assignments.map((a) => [`${a.itemId}#${a.unitIndex}`, a.personIds]));
+  const counts = new Map<string, { n: number; shared: boolean }>();
+  for (const it of receipt.items) {
+    for (let u = 0; u < it.qty; u++) {
+      const ppl = byUnit.get(`${it.id}#${u}`);
+      if (ppl && ppl.includes(personId)) {
+        const cur = counts.get(it.name) ?? { n: 0, shared: false };
+        cur.n += 1;
+        if (ppl.length > 1) cur.shared = true;
+        counts.set(it.name, cur);
+      }
+    }
+  }
+  return [...counts.entries()]
+    .map(([name, { n, shared }]) => name + (n > 1 ? ` x${n}` : "") + (shared ? " (спільна)" : ""))
+    .join(", ");
+}
+
 /* --------------------------------- застосунок --------------------------------- */
 
 export default function AppFlow() {
@@ -308,6 +328,8 @@ export default function AppFlow() {
               <Result
                 people={people}
                 result={result}
+                receipt={receipt}
+                assignments={assignments}
                 dictMode={dictMode}
                 onCorrect={correct}
                 onReset={reset}
@@ -550,12 +572,16 @@ function Clarify({
 function Result({
   people,
   result,
+  receipt,
+  assignments,
   dictMode,
   onCorrect,
   onReset,
 }: {
   people: Person[];
   result: ReturnType<typeof computeSplit>;
+  receipt: Receipt;
+  assignments: UnitAssignment[];
   dictMode: DictMode;
   onCorrect: () => void;
   onReset: () => void;
@@ -563,24 +589,29 @@ function Result({
   const correcting = dictMode === "correct";
   return (
     <>
-      <div className="people">
+      <p className="screen-lead">Кожен платить:</p>
+      <div className="result-list">
         {result.perPerson.map((r) => {
           const p = people.find((x) => x.id === r.personId);
           const name = p?.name ?? r.personId;
+          const items = itemsForPerson(r.personId, receipt, assignments);
           return (
             <motion.div
               key={r.personId}
-              className="person"
+              className="pay-row"
               layout
-              initial={{ scale: 0.96, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ type: "spring", stiffness: 300, damping: 22 }}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ type: "spring", stiffness: 300, damping: 24 }}
             >
               <div className="ava" style={{ background: colorFor(r.personId, people) }}>
                 {name[0]?.toUpperCase()}
               </div>
-              <div className="who">{name}</div>
-              <div className="sum">{money(r.totalCents)}</div>
+              <div className="pay-info">
+                <div className="pay-name">{name}</div>
+                <div className="pay-items">{items || "-"}</div>
+              </div>
+              <div className="pay-sum">{money(r.totalCents)}</div>
             </motion.div>
           );
         })}
