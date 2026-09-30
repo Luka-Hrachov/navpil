@@ -139,4 +139,5 @@ Gemini key, 3 receipts × (recognize + parse) = 6 calls:
 
 ## Time spent
 
-Roughly 8 focused hours on 2026-09-30 (the brief's orientation budget).
+About 4.5 focused hours on 2026-09-30 — from the first commit (13:45) to the
+delivery notes (18:09), same day — well under the brief's 8-hour orientation.
