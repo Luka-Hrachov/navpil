@@ -1,4 +1,18 @@
 import type { Receipt, Person, UnitAssignment } from "@/lib/split";
+import type { TokenUsage } from "@/lib/cost";
+
+/**
+ * Метадані одного виклику Gemini: час і токени (з usageMetadata відповіді) +
+ * оцінна вартість у USD (див. lib/cost.ts::costUsd). ОПЦІЙНЕ поле на
+ * відповідях API - додане пізніше, щоб не ламати наявних споживачів
+ * (напр. app/app-flow.tsx), і відсутнє на "mock"-відповідях без реального
+ * виклику моделі.
+ */
+export interface CallMeta {
+  ms: number;
+  tokens: TokenUsage;
+  costUsd: number;
+}
 
 export interface ItemMeta {
   id: string;
@@ -18,6 +32,8 @@ export interface RecognizeResponse {
   itemsMeta: ItemMeta[];
   source: "gemini" | "mock";
   error?: string;
+  /** Час/токени/вартість цього виклику Gemini. Відсутнє на mock-відповідях. */
+  meta?: CallMeta;
 }
 
 export interface Clarification {
@@ -38,4 +54,6 @@ export interface ParseResponse {
   clarifications: Clarification[];
   source: "gemini" | "mock";
   error?: string;
+  /** Час/токени/вартість цього виклику Gemini. Відсутнє на mock-відповідях. */
+  meta?: CallMeta;
 }

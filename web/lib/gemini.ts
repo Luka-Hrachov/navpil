@@ -9,6 +9,7 @@
 
 import type { Item, Person, Receipt, UnitAssignment } from "@/lib/split";
 import type {
+  CallMeta,
   Clarification,
   ItemMeta,
   ParseRequest,
@@ -16,6 +17,8 @@ import type {
   RecognizeRequest,
   RecognizeResponse,
 } from "@/lib/api-types";
+import { costUsd } from "@/lib/cost";
+import type { TokenUsage } from "@/lib/cost";
 
 const GEMINI_MODEL = "gemini-2.5-flash";
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -38,6 +41,12 @@ interface GeminiGenerateContentResponse {
     finishReason?: string;
   }>;
   promptFeedback?: { blockReason?: string };
+  /** Лічильник токенів запиту/відповіді - основа для оцінки вартості (lib/cost.ts). */
+  usageMetadata?: {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+    totalTokenCount?: number;
+  };
 }
 
 /** Мінімальне підмножина OpenAPI-схеми, яку розуміє Gemini responseSchema. */
@@ -49,11 +58,18 @@ type GeminiSchema = {
   description?: string;
 };
 
+/**
+ * callGemini повертає не лише розпарсений JSON-payload, а й вимір: скільки
+ * часу зайняв мережевий виклик (Date.now до/після fetch) і скільки токенів
+ * spent (з usageMetadata відповіді Gemini) разом з оцінною вартістю в USD
+ * (lib/cost.ts::costUsd). Це ЧИСТО вимірювання - на розпізнавання/розбір
+ * воно жодним чином не впливає.
+ */
 async function callGemini(params: {
   systemInstruction: string;
   contents: GeminiContent[];
   responseSchema: GeminiSchema;
-}): Promise<unknown> {
+}): Promise<{ data: unknown; meta: CallMeta }> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     // route-хендлери самі перевіряють наявність ключа й ідуть у мок раніше,
@@ -63,6 +79,7 @@ async function callGemini(params: {
 
   const url = `${GEMINI_API_BASE}/${GEMINI_MODEL}:generateContent`;
 
+  const t0 = Date.now();
   const res = await fetch(url, {
     method: "POST",
     headers: {
@@ -88,6 +105,7 @@ async function callGemini(params: {
   }
 
   const data = (await res.json()) as GeminiGenerateContentResponse;
+  const ms = Date.now() - t0;
 
   if (data.promptFeedback?.blockReason) {
     console.error(`[gemini] blocked: ${data.promptFeedback.blockReason}`);
@@ -99,8 +117,16 @@ async function callGemini(params: {
     throw new Error("Gemini повернув порожню відповідь без тексту.");
   }
 
+  const usage = data.usageMetadata;
+  const tokens: TokenUsage = {
+    input: usage?.promptTokenCount ?? 0,
+    output: usage?.candidatesTokenCount ?? 0,
+    total: usage?.totalTokenCount ?? (usage?.promptTokenCount ?? 0) + (usage?.candidatesTokenCount ?? 0),
+  };
+  const meta: CallMeta = { ms, tokens, costUsd: costUsd(tokens) };
+
   try {
-    return JSON.parse(text) as unknown;
+    return { data: JSON.parse(text) as unknown, meta };
   } catch {
     throw new Error("Не вдалося розпарсити JSON-відповідь Gemini.");
   }
@@ -172,7 +198,7 @@ interface RecognizeGeminiPayload {
  * функції рантаймом (наприклад, з app/api/recognize/route.ts).
  */
 export async function recognizeReceipt(req: RecognizeRequest): Promise<RecognizeResponse> {
-  const raw = (await callGemini({
+  const { data, meta } = await callGemini({
     systemInstruction: RECOGNIZE_SYSTEM_PROMPT,
     contents: [
       {
@@ -184,7 +210,8 @@ export async function recognizeReceipt(req: RecognizeRequest): Promise<Recognize
       },
     ],
     responseSchema: RECOGNIZE_SCHEMA,
-  })) as RecognizeGeminiPayload;
+  });
+  const raw = data as RecognizeGeminiPayload;
 
   if (!raw || !Array.isArray(raw.items)) {
     throw new Error("Gemini: відповідь не містить масив items.");
@@ -221,7 +248,7 @@ export async function recognizeReceipt(req: RecognizeRequest): Promise<Recognize
     totalCents: Math.max(0, Math.round(Number(raw.totalCents ?? 0))),
   };
 
-  return { receipt, itemsMeta, source: "gemini" };
+  return { receipt, itemsMeta, source: "gemini", meta };
 }
 
 /* --------------------------------- parseIntent --------------------------------- */
@@ -328,11 +355,12 @@ export async function parseIntent(req: ParseRequest): Promise<ParseResponse> {
     "Визнач власника кожної одиниці товару й поверни JSON за схемою, вказаною в системній інструкції.",
   ].join("\n\n");
 
-  const raw = (await callGemini({
+  const { data, meta } = await callGemini({
     systemInstruction: PARSE_SYSTEM_PROMPT,
     contents: [{ role: "user", parts: [{ text: userPrompt }] }],
     responseSchema: PARSE_SCHEMA,
-  })) as ParseGeminiPayload;
+  });
+  const raw = data as ParseGeminiPayload;
 
   if (
     !raw ||
@@ -388,5 +416,5 @@ export async function parseIntent(req: ParseRequest): Promise<ParseResponse> {
     });
   }
 
-  return { people, assignments, clarifications, source: "gemini" };
+  return { people, assignments, clarifications, source: "gemini", meta };
 }

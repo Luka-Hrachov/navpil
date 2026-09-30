@@ -1,0 +1,49 @@
+{
+  "scenario": "normal",
+  "description": "Нормальний поділ: 3 людини, кожен бере своє, без спільних позицій, без сервісу.",
+  "receiptImage": "scenario1/receipt.png",
+  "voiceTranscriptFile": "scenario1/voice.txt",
+  "receipt": {
+    "items": [
+      { "id": "cappuccino", "name": "Капучино", "qty": 1, "unitPriceCents": 6500 },
+      { "id": "croissant", "name": "Круасан з мигдалем", "qty": 1, "unitPriceCents": 8500 },
+      { "id": "latte", "name": "Лате", "qty": 1, "unitPriceCents": 7500 },
+      { "id": "tiramisu", "name": "Тірамісу", "qty": 1, "unitPriceCents": 12000 },
+      { "id": "americano", "name": "Американо", "qty": 1, "unitPriceCents": 5500 },
+      { "id": "syrnyky", "name": "Сирники", "qty": 1, "unitPriceCents": 13500 }
+    ],
+    "serviceChargeCents": 0,
+    "totalCents": 53500
+  },
+  "people": [
+    { "id": "me", "name": "Я" },
+    { "id": "nastya", "name": "Настя" },
+    { "id": "igor", "name": "Ігор" }
+  ],
+  "transcript": "Я взяв капучино і круасан з мигдалем. Настя брала лате і тірамісу. Ігор замовляв американо і сирники.",
+  "assignments": [
+    { "itemId": "cappuccino", "unitIndex": 0, "personIds": ["me"] },
+    { "itemId": "croissant", "unitIndex": 0, "personIds": ["me"] },
+    { "itemId": "latte", "unitIndex": 0, "personIds": ["nastya"] },
+    { "itemId": "tiramisu", "unitIndex": 0, "personIds": ["nastya"] },
+    { "itemId": "americano", "unitIndex": 0, "personIds": ["igor"] },
+    { "itemId": "syrnyky", "unitIndex": 0, "personIds": ["igor"] }
+  ],
+  "clarifications": [],
+  "expectedBehavior": "Усі позиції призначені однозначно з першої фрази. Clarification не потрібен. Екран 6 одразу показує 'усе розкладено, сума сходиться'.",
+  "expected": {
+    "ok": true,
+    "unassigned": [],
+    "unknownPeople": [],
+    "totalMismatch": false,
+    "sumCents": 53500,
+    "expectedCents": 53500,
+    "receiptTotalCents": 53500,
+    "perPerson": [
+      { "personId": "me", "name": "Я", "subtotalCents": 15000, "serviceCents": 0, "totalCents": 15000, "totalUAH": "150,00" },
+      { "personId": "nastya", "name": "Настя", "subtotalCents": 19500, "serviceCents": 0, "totalCents": 19500, "totalUAH": "195,00" },
+      { "personId": "igor", "name": "Ігор", "subtotalCents": 19000, "serviceCents": 0, "totalCents": 19000, "totalUAH": "190,00" }
+    ]
+  },
+  "verifiedWith": "test-assets/verify.ts (computeSplit з web/lib/split.ts) - зійшлося, розбіжностей: 0"
+}

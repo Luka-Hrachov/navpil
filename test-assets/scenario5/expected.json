@@ -1,0 +1,62 @@
+{
+  "scenario": "unreadable",
+  "description": "Частково нечитабельний чек: позиція 'Хумус з питою' на фото намальована розмито/зашумлено (низький контраст + gaussian blur + шум). Очікувано модель невпевнена в цьому рядку -> продукт має перепитати/дати виправити, а не вигадати ціну.",
+  "receiptImage": "scenario5/receipt.png",
+  "voiceTranscriptFile": "scenario5/voice.txt",
+  "blurredItem": {
+    "itemId": "hummus",
+    "name": "Хумус з питою",
+    "trueUnitPriceCents": 13000,
+    "renderNote": "У generate_receipts.py рядок цієї позиції (і назва, і ціна) пройшов через: змішування з сірим фоном (низький контраст), Gaussian blur radius=2.6, точковий шум ±40 на ~12% пікселів регіону. Решта чека залишається чіткою для контрасту."
+  },
+  "receipt": {
+    "items": [
+      { "id": "burger", "name": "Бургер класичний", "qty": 1, "unitPriceCents": 16500 },
+      { "id": "fries", "name": "Картопля фрі", "qty": 1, "unitPriceCents": 5500 },
+      { "id": "hummus", "name": "Хумус з питою", "qty": 1, "unitPriceCents": 13000 },
+      { "id": "lemonade", "name": "Лимонад домашній", "qty": 1, "unitPriceCents": 6000 },
+      { "id": "nuggets", "name": "Наггетси", "qty": 1, "unitPriceCents": 9500 }
+    ],
+    "serviceChargeCents": 5050,
+    "totalCents": 55550
+  },
+  "people": [
+    { "id": "me", "name": "Я" },
+    { "id": "nastya", "name": "Настя" },
+    { "id": "dmytro", "name": "Дмитро" }
+  ],
+  "expectedRecognitionBehavior": {
+    "step": "Екран 2-3 (розпізнавання фото, ДО голосового кроку)",
+    "requirement": "itemsMeta для позиції 'hummus' повинен мати низький confidence (продукт вважає прийнятним, наприклад, <0.6). Екран 3 підсвічує цей рядок і позначає '?'. Продукт НЕ повинен мовчки підставити впевнену ціну/назву без підтвердження.",
+    "acceptableOutcomes": [
+      "Модель повертає низький confidence для 'hummus' -> користувач підтверджує/виправляє на Екрані 3 (тап + вибір із кандидатів або голос) -> цикл до N=3 спроб.",
+      "Якщо після N спроб позиція так і не прочитана впевнено -> Екран-помилка ('Не можу впевнено прочитати чек', пропозиція перефотографувати), а НЕ здогадка."
+    ],
+    "forbidden": "Тихо вважати цю позицію звичайною (confidence як в інших) і одразу пропустити далі без жодної позначки '?' чи можливості виправити."
+  },
+  "transcript": "Я взяв бургер і картоплю фрі. Настя взяла хумус з питою. Дмитро взяв лимонад і наггетси.",
+  "transcriptNote": "Цей транскрипт відноситься до наступного кроку ('хто що брав') і застосовується ПІСЛЯ того, як користувач підтвердив/виправив розмиту позицію на Екрані 3. Ground-truth нижче - фінальний стан з правильною ціною (13000 коп.), для звірки рушія підрахунку.",
+  "assignments": [
+    { "itemId": "burger", "unitIndex": 0, "personIds": ["me"] },
+    { "itemId": "fries", "unitIndex": 0, "personIds": ["me"] },
+    { "itemId": "hummus", "unitIndex": 0, "personIds": ["nastya"] },
+    { "itemId": "lemonade", "unitIndex": 0, "personIds": ["dmytro"] },
+    { "itemId": "nuggets", "unitIndex": 0, "personIds": ["dmytro"] }
+  ],
+  "clarifications": [],
+  "expected": {
+    "ok": true,
+    "unassigned": [],
+    "unknownPeople": [],
+    "totalMismatch": false,
+    "sumCents": 55550,
+    "expectedCents": 55550,
+    "receiptTotalCents": 55550,
+    "perPerson": [
+      { "personId": "me", "name": "Я", "subtotalCents": 22000, "serviceCents": 2200, "totalCents": 24200, "totalUAH": "242,00" },
+      { "personId": "nastya", "name": "Настя", "subtotalCents": 13000, "serviceCents": 1300, "totalCents": 14300, "totalUAH": "143,00" },
+      { "personId": "dmytro", "name": "Дмитро", "subtotalCents": 15500, "serviceCents": 1550, "totalCents": 17050, "totalUAH": "170,50" }
+    ]
+  },
+  "verifiedWith": "test-assets/verify.ts (computeSplit з web/lib/split.ts, стан ПІСЛЯ підтвердження розмитої позиції) - зійшлося, розбіжностей: 0"
+}

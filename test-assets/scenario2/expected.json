@@ -1,0 +1,49 @@
+{
+  "scenario": "shared",
+  "description": "Одна спільна страва (піца) на всіх трьох + решта позицій окремо. Сервіс 10%.",
+  "receiptImage": "scenario2/receipt.png",
+  "voiceTranscriptFile": "scenario2/voice.txt",
+  "receipt": {
+    "items": [
+      { "id": "pizza", "name": "Піца Маргарита", "qty": 1, "unitPriceCents": 32000 },
+      { "id": "caesar", "name": "Салат Цезар", "qty": 1, "unitPriceCents": 14500 },
+      { "id": "tiramisu", "name": "Тірамісу", "qty": 1, "unitPriceCents": 11000 },
+      { "id": "mors", "name": "Морс домашній", "qty": 2, "unitPriceCents": 4000 },
+      { "id": "coffee", "name": "Кава", "qty": 1, "unitPriceCents": 5500 }
+    ],
+    "serviceChargeCents": 7100,
+    "totalCents": 78100
+  },
+  "people": [
+    { "id": "me", "name": "Я" },
+    { "id": "marko", "name": "Марко" },
+    { "id": "yulya", "name": "Юля" }
+  ],
+  "transcript": "Піцу Маргариту ділимо на всіх трьох порівну. Я взяв салат Цезар. Марко взяв тірамісу і перший морс. Юля взяла другий морс і каву.",
+  "assignments": [
+    { "itemId": "pizza", "unitIndex": 0, "personIds": ["me", "marko", "yulya"] },
+    { "itemId": "caesar", "unitIndex": 0, "personIds": ["me"] },
+    { "itemId": "tiramisu", "unitIndex": 0, "personIds": ["marko"] },
+    { "itemId": "mors", "unitIndex": 0, "personIds": ["marko"] },
+    { "itemId": "mors", "unitIndex": 1, "personIds": ["yulya"] },
+    { "itemId": "coffee", "unitIndex": 0, "personIds": ["yulya"] }
+  ],
+  "clarifications": [],
+  "expectedBehavior": "Спільна позиція (піца, personIds=[me,marko,yulya]) ділиться порівну з детермінованим залишком копійок (32000/3 = 10666 базово + 2 коп. залишку - по стабільному порядку імен: Марко, Юля, Я отримують +1 коп. першими). Сервіс 10% розкидається пропорційно підсумку кожного; в цьому сценарії пропорція рівно /10, тому дробові частини (0.6 у 'Я', 0.7 у 'Марко' і 'Юля') і залишок 2 коп. сервісу йдуть Марку та Юлі. Clarification не потрібен.",
+  "expected": {
+    "ok": true,
+    "unassigned": [],
+    "unknownPeople": [],
+    "totalMismatch": false,
+    "sumCents": 78100,
+    "expectedCents": 78100,
+    "receiptTotalCents": 78100,
+    "perPerson": [
+      { "personId": "me", "name": "Я", "subtotalCents": 25166, "serviceCents": 2516, "totalCents": 27682, "totalUAH": "276,82" },
+      { "personId": "marko", "name": "Марко", "subtotalCents": 25667, "serviceCents": 2567, "totalCents": 28234, "totalUAH": "282,34" },
+      { "personId": "yulya", "name": "Юля", "subtotalCents": 20167, "serviceCents": 2017, "totalCents": 22184, "totalUAH": "221,84" }
+    ],
+    "note": "Частка піци у subtotalCents: Я=10666, Марко=10667, Юля=10667 (32000 коп. / 3, залишок 2 коп. -> Марко, Юля за стабільним порядком імен)."
+  },
+  "verifiedWith": "test-assets/verify.ts (computeSplit з web/lib/split.ts) - зійшлося, розбіжностей: 0"
+}

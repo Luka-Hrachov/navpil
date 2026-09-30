@@ -34,6 +34,12 @@ export async function POST(request: Request): Promise<Response> {
 
   try {
     const result = await recognizeReceipt(body);
+    if (result.meta) {
+      const { ms, tokens, costUsd } = result.meta;
+      console.log(
+        `[cost] recognize ms=${ms} tokens=in:${tokens.input}/out:${tokens.output}/total:${tokens.total} $=${costUsd.toFixed(6)}`
+      );
+    }
     return Response.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Не вдалося розпізнати чек.";

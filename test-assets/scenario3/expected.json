@@ -1,0 +1,68 @@
+{
+  "scenario": "correction",
+  "description": "Базовий поділ, потім голосове виправлення на Екрані 6: 'насправді другу каву брав Сем'. Стан ДО і ПІСЛЯ.",
+  "receiptImage": "scenario3/receipt.png",
+  "voiceTranscriptFile": "scenario3/voice.txt",
+  "receipt": {
+    "items": [
+      { "id": "borsch", "name": "Борщ", "qty": 1, "unitPriceCents": 12000 },
+      { "id": "salad", "name": "Салат овочевий", "qty": 1, "unitPriceCents": 9500 },
+      { "id": "coffee", "name": "Кава", "qty": 2, "unitPriceCents": 6500 },
+      { "id": "steak", "name": "Стейк з телятини", "qty": 1, "unitPriceCents": 25000 }
+    ],
+    "serviceChargeCents": 0,
+    "totalCents": 59500
+  },
+  "people": [
+    { "id": "me", "name": "Я" },
+    { "id": "olya", "name": "Оля" },
+    { "id": "sam", "name": "Сем" }
+  ],
+  "before": {
+    "transcript": "Я взяв борщ. Оля взяла салат і обидві кави. Сем узяв стейк.",
+    "assignments": [
+      { "itemId": "borsch", "unitIndex": 0, "personIds": ["me"] },
+      { "itemId": "salad", "unitIndex": 0, "personIds": ["olya"] },
+      { "itemId": "coffee", "unitIndex": 0, "personIds": ["olya"] },
+      { "itemId": "coffee", "unitIndex": 1, "personIds": ["olya"] },
+      { "itemId": "steak", "unitIndex": 0, "personIds": ["sam"] }
+    ],
+    "clarifications": [],
+    "expected": {
+      "ok": true,
+      "unassigned": [],
+      "totalMismatch": false,
+      "sumCents": 59500,
+      "perPerson": [
+        { "personId": "me", "name": "Я", "subtotalCents": 12000, "serviceCents": 0, "totalCents": 12000, "totalUAH": "120,00" },
+        { "personId": "olya", "name": "Оля", "subtotalCents": 22500, "serviceCents": 0, "totalCents": 22500, "totalUAH": "225,00" },
+        { "personId": "sam", "name": "Сем", "subtotalCents": 25000, "serviceCents": 0, "totalCents": 25000, "totalUAH": "250,00" }
+      ]
+    }
+  },
+  "correctionUtterance": "Насправді другу каву взяв Сем, не Оля.",
+  "after": {
+    "note": "Correction міняє лише coffee#unitIndex=1: personIds ['olya'] -> ['sam']. Усі інші призначення незмінні.",
+    "assignments": [
+      { "itemId": "borsch", "unitIndex": 0, "personIds": ["me"] },
+      { "itemId": "salad", "unitIndex": 0, "personIds": ["olya"] },
+      { "itemId": "coffee", "unitIndex": 0, "personIds": ["olya"] },
+      { "itemId": "coffee", "unitIndex": 1, "personIds": ["sam"] },
+      { "itemId": "steak", "unitIndex": 0, "personIds": ["sam"] }
+    ],
+    "clarifications": [],
+    "expected": {
+      "ok": true,
+      "unassigned": [],
+      "totalMismatch": false,
+      "sumCents": 59500,
+      "perPerson": [
+        { "personId": "me", "name": "Я", "subtotalCents": 12000, "serviceCents": 0, "totalCents": 12000, "totalUAH": "120,00" },
+        { "personId": "olya", "name": "Оля", "subtotalCents": 16000, "serviceCents": 0, "totalCents": 16000, "totalUAH": "160,00" },
+        { "personId": "sam", "name": "Сем", "subtotalCents": 31500, "serviceCents": 0, "totalCents": 31500, "totalUAH": "315,00" }
+      ]
+    }
+  },
+  "expectedBehavior": "Після виправлення картки Олі і Сема на Екрані 6 плавно оновлюються (Оля: 225,00 -> 160,00 грн; Сем: 250,00 -> 315,00 грн), картка 'Я' не змінюється. Сума завжди 595,00 грн, ok=true в обох станах - виправлення не створює unassigned/unknown, воно лише переносить одну одиницю товару.",
+  "verifiedWith": "test-assets/verify.ts (computeSplit з web/lib/split.ts, стани before/after) - зійшлося, розбіжностей: 0"
+}

@@ -1,0 +1,77 @@
+{
+  "scenario": "ambiguous",
+  "description": "Повторювана позиція (2 однакові Капучино), голосом згадано лише одну каву без уточнення, хто взяв другу -> має спрацювати clarification.",
+  "receiptImage": "scenario4/receipt.png",
+  "voiceTranscriptFile": "scenario4/voice.txt",
+  "receipt": {
+    "items": [
+      { "id": "cappuccino", "name": "Капучино", "qty": 2, "unitPriceCents": 6000 },
+      { "id": "sandwich", "name": "Сендвіч з куркою", "qty": 1, "unitPriceCents": 9500 },
+      { "id": "muffin", "name": "Мафін чорничний", "qty": 1, "unitPriceCents": 5500 }
+    ],
+    "serviceChargeCents": 0,
+    "totalCents": 27000
+  },
+  "people": [
+    { "id": "me", "name": "Я" },
+    { "id": "liza", "name": "Ліза" },
+    { "id": "taras", "name": "Тарас" }
+  ],
+  "transcript": "Я взяв каву. Ліза взяла сендвіч з куркою. Тарас узяв мафін чорничний.",
+  "beforeClarification": {
+    "note": "Парсер впевнено призначає unit0 Капучино на 'Я' (єдина явна згадка кави), unit1 лишає порожнім - модель НЕ повинна вигадувати, хто взяв другу каву.",
+    "assignments": [
+      { "itemId": "cappuccino", "unitIndex": 0, "personIds": ["me"] },
+      { "itemId": "cappuccino", "unitIndex": 1, "personIds": [] },
+      { "itemId": "sandwich", "unitIndex": 0, "personIds": ["liza"] },
+      { "itemId": "muffin", "unitIndex": 0, "personIds": ["taras"] }
+    ],
+    "expected": {
+      "ok": false,
+      "unassigned": ["Капучино"],
+      "unknownPeople": [],
+      "totalMismatch": false,
+      "sumCents": 21000,
+      "expectedCents": 27000,
+      "receiptTotalCents": 27000,
+      "perPerson": [
+        { "personId": "me", "name": "Я", "subtotalCents": 6000, "serviceCents": 0, "totalCents": 6000, "totalUAH": "60,00" },
+        { "personId": "liza", "name": "Ліза", "subtotalCents": 9500, "serviceCents": 0, "totalCents": 9500, "totalUAH": "95,00" },
+        { "personId": "taras", "name": "Тарас", "subtotalCents": 5500, "serviceCents": 0, "totalCents": 5500, "totalUAH": "55,00" }
+      ]
+    }
+  },
+  "clarifications": [
+    {
+      "question": "На чеку дві кави (Капучино). Одну взяли Ви. Хто взяв другу?",
+      "target": { "itemId": "cappuccino", "unitIndex": 1 },
+      "options": ["me", "liza", "taras"]
+    }
+  ],
+  "exampleResolution": {
+    "answer": "Тарас (друга кава)",
+    "resolutionUtterance": "Другу каву взяв Тарас.",
+    "assignments": [
+      { "itemId": "cappuccino", "unitIndex": 0, "personIds": ["me"] },
+      { "itemId": "cappuccino", "unitIndex": 1, "personIds": ["taras"] },
+      { "itemId": "sandwich", "unitIndex": 0, "personIds": ["liza"] },
+      { "itemId": "muffin", "unitIndex": 0, "personIds": ["taras"] }
+    ],
+    "expected": {
+      "ok": true,
+      "unassigned": [],
+      "unknownPeople": [],
+      "totalMismatch": false,
+      "sumCents": 27000,
+      "expectedCents": 27000,
+      "receiptTotalCents": 27000,
+      "perPerson": [
+        { "personId": "me", "name": "Я", "subtotalCents": 6000, "serviceCents": 0, "totalCents": 6000, "totalUAH": "60,00" },
+        { "personId": "liza", "name": "Ліза", "subtotalCents": 9500, "serviceCents": 0, "totalCents": 9500, "totalUAH": "95,00" },
+        { "personId": "taras", "name": "Тарас", "subtotalCents": 11500, "serviceCents": 0, "totalCents": 11500, "totalUAH": "115,00" }
+      ]
+    }
+  },
+  "expectedBehavior": "Екран 5 (уточнення) має показати саме ОДНЕ питання про другу каву (патерн 'повторювана позиція' з ALGO.md), з варіантами - усі 3 людини (бо другу каву міг узяти будь-хто, включно з 'Я'). Доки не відповіли - Екран 6 НЕ показує 'сходиться' (ok=false, unassigned містить 'Капучино'). Після відповіді - розподіл довершується детерміновано.",
+  "verifiedWith": "test-assets/verify.ts (computeSplit з web/lib/split.ts, стани beforeClarification/exampleResolution) - зійшлося, розбіжностей: 0"
+}
