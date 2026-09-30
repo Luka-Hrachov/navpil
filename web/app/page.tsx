@@ -1,9 +1,5 @@
-import ReceiptScreen from "./receipt-screen";
+import AppFlow from "./app-flow";
 
 export default function Home() {
-  return (
-    <main className="stage">
-      <ReceiptScreen />
-    </main>
-  );
+  return <AppFlow />;
 }
