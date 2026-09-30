@@ -45,6 +45,7 @@ body {
   place-items: safe center;
   padding: clamp(16px, 4vw, 56px) 16px;
   padding-top: calc(clamp(16px, 4vw, 56px) + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(clamp(16px, 4vw, 56px) + env(safe-area-inset-bottom, 0px));
   background:
     radial-gradient(70% 55% at 50% -5%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 70%),
     radial-gradient(50% 40% at 90% 100%, color-mix(in srgb, var(--p3) 8%, transparent), transparent 70%);
@@ -59,7 +60,11 @@ body {
   padding: 24px 22px 26px;
 }
 @media (max-width: 520px) {
-  .stage { padding: 14px 12px; padding-top: calc(14px + env(safe-area-inset-top, 0px)); }
+  .stage {
+    padding: 14px 12px;
+    padding-top: calc(14px + env(safe-area-inset-top, 0px));
+    padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  }
   .app { border-radius: 22px; padding: 20px 16px 22px; }
 }
 
@@ -126,10 +131,11 @@ body {
 .btn-ghost {
   display: flex; align-items: center; justify-content: center; width: 100%;
   background: transparent; color: var(--muted); border: 1px solid var(--border);
-  border-radius: 15px; padding: 13px; font: inherit; font-weight: 700; font-size: 14px;
+  border-radius: 15px; padding: 13px; min-height: 44px; font: inherit; font-weight: 700; font-size: 14px;
   cursor: pointer; margin-top: 10px; transition: color 0.15s, border-color 0.15s;
 }
 .btn-ghost:hover { color: var(--text); border-color: var(--muted); }
+.btn-primary:disabled, .btn-ghost:disabled { opacity: 0.55; cursor: default; }
 .actions { margin-top: 18px; }
 
 /* ---------- paper receipt (graphic) ---------- */
@@ -159,7 +165,7 @@ body {
 .r-item.low .r-name {
   background: #ffdf7e; border-radius: 3px; padding: 0 3px; box-shadow: 0 0 0 2px #ffdf7e;
 }
-.r-item.low::after { content: " ?"; color: #b8860b; font-weight: 700; }
+.r-item.low .r-name::after { content: " ?"; color: #b8860b; font-weight: 700; }
 .r-total { display: flex; justify-content: space-between; font-weight: 700; font-size: 16px; margin-top: 2px; }
 .r-foot { text-align: center; font-size: 10.5px; color: var(--paper-mut); margin-top: 12px; }
 .r-barcode {
@@ -209,11 +215,13 @@ body {
 
 /* clarify */
 .sheet { padding-top: 6px; }
-.chips { display: flex; gap: 10px; margin-top: 8px; }
+.chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
 .chip-btn {
-  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px;
+  flex: 1 1 84px; min-width: 84px;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
   background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius);
   padding: 16px 8px; color: var(--text); font: inherit; font-weight: 700; font-size: 13.5px;
+  text-align: center; word-break: break-word; overflow-wrap: anywhere;
   cursor: pointer; transition: transform 0.18s, border-color 0.18s;
 }
 .chip-btn:hover { transform: translateY(-2px); border-color: var(--accent); }
@@ -227,7 +235,7 @@ body {
 }
 .pay-row .ava { margin: 0; flex: 0 0 auto; }
 .pay-info { flex: 1 1 auto; min-width: 0; }
-.pay-name { font-size: 15px; font-weight: 700; }
+.pay-name { font-size: 15px; font-weight: 700; overflow-wrap: anywhere; word-break: break-word; }
 .pay-items {
   font-size: 12.5px; color: var(--muted); margin-top: 2px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

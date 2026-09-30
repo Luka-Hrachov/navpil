@@ -1,74 +1,39 @@
 // POST /api/parse - розбір голосового транскрипту в призначення одиниць товару.
-// Без GEMINI_API_KEY повертає мок, що збігається з поточним сценарієм
-// застосунку (app/app-flow.tsx: MOCK_TRANSCRIPT + BASE_ASSIGN + Clarify-екран
-// про другу каву). З ключем - реально виконає gemini.parseIntent (мережевий
-// виклик відбудеться лише коли цей route-хендлер реально обробить HTTP-запит,
-// не під час написання/типчеку коду).
+// БЕЗ ключа - чесна помилка (жодних вигаданих призначень на неіснуючі позиції).
+// Мережевий виклик відбувається лише коли цей хендлер реально обробляє запит.
 
-import type { ParseRequest, ParseResponse } from "@/lib/api-types";
+import type { ParseRequest } from "@/lib/api-types";
 import { parseIntent } from "@/lib/gemini";
-
-function buildMockResponse(people: ParseRequest["people"]): ParseResponse {
-  return {
-    people,
-    assignments: [
-      { itemId: "borsch", unitIndex: 0, personIds: ["me"] },
-      { itemId: "borsch", unitIndex: 1, personIds: ["me"] },
-      { itemId: "coffee", unitIndex: 0, personIds: ["me"] },
-      { itemId: "pizza", unitIndex: 0, personIds: ["me", "anya", "sam"] },
-      // coffee unitIndex 1 навмисно лишається непризначеною - уточнюємо нижче.
-    ],
-    clarifications: [
-      {
-        question: "Дві кави - хто брав другу?",
-        target: { itemId: "coffee", unitIndex: 1 },
-        options: ["me", "anya", "sam"],
-      },
-    ],
-    source: "mock",
-  };
-}
-
-const EMPTY_MOCK_RESPONSE: ParseResponse = {
-  people: [],
-  assignments: [],
-  clarifications: [],
-  source: "mock",
-};
 
 export async function POST(request: Request): Promise<Response> {
   let body: ParseRequest;
   try {
     body = (await request.json()) as ParseRequest;
   } catch {
-    return Response.json(
-      { ...EMPTY_MOCK_RESPONSE, error: "Некоректний JSON у тілі запиту." } satisfies ParseResponse,
-      { status: 400 }
-    );
+    return Response.json({ error: "Некоректний запит." }, { status: 400 });
   }
 
-  // Немає ключа - мок. Це основний робочий режим цього агента: жодного
-  // реального виклику Gemini тут не станеться.
   if (!process.env.GEMINI_API_KEY) {
-    return Response.json(buildMockResponse(body?.people ?? []));
+    return Response.json({ error: "Розбір голосу не налаштовано на сервері." }, { status: 503 });
   }
 
-  if (!body?.transcript || !body?.receipt || !body?.people) {
-    return Response.json(
-      {
-        ...buildMockResponse(body?.people ?? []),
-        error: "Відсутні обов'язкові поля запиту (transcript/receipt/people).",
-      } satisfies ParseResponse,
-      { status: 400 }
-    );
+  const okBody =
+    body &&
+    typeof body.transcript === "string" &&
+    body.transcript.trim().length > 0 &&
+    body.receipt &&
+    Array.isArray(body.receipt.items) &&
+    Array.isArray(body.people);
+  if (!okBody) {
+    return Response.json({ error: "Відсутні або некоректні поля запиту." }, { status: 400 });
   }
 
   try {
     const result = await parseIntent(body);
     return Response.json(result);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Невідома помилка виклику Gemini.";
-    // Падаємо назад у мок, щоб застосунок лишався робочим навіть при збої моделі.
-    return Response.json({ ...buildMockResponse(body.people), error: message } satisfies ParseResponse);
+    const message = err instanceof Error ? err.message : "Не вдалося розібрати голос.";
+    console.error("[parse]", message);
+    return Response.json({ error: message }, { status: 502 });
   }
 }

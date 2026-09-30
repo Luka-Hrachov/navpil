@@ -1,5 +1,7 @@
 // Детермінований рушій підрахунку. Усе в копійках (цілі числа), без float-похибок.
 // Модель сюди НЕ втручається - вона лише дає структуру; суми рахує цей код.
+// Рушій НЕ довіряє вхідним даним: невідомі люди, дублікати, порожні призначення
+// обробляються явно (issues), а не тихо ламають суми.
 
 export type Cents = number; // завжди ціле
 
@@ -7,7 +9,7 @@ export interface Item {
   id: string;
   name: string;
   qty: number;
-  unitPriceCents: Cents; // ціна за одну одиницю
+  unitPriceCents: Cents;
 }
 
 export interface Person {
@@ -24,8 +26,8 @@ export interface UnitAssignment {
 
 export interface Receipt {
   items: Item[];
-  serviceChargeCents: Cents; // сервісний збір як сума
-  totalCents: Cents; // підсумок з чека (для перевірки інваріанта)
+  serviceChargeCents: Cents;
+  totalCents: Cents; // підсумок з чека (для перевірки розпізнавання)
 }
 
 export interface PersonResult {
@@ -37,10 +39,17 @@ export interface PersonResult {
 
 export interface SplitResult {
   perPerson: PersonResult[];
-  ok: boolean; // усе призначено й суми сходяться
-  issues: string[]; // що не так (непризначене, розбіжність суми)
-  sumCents: Cents; // сума всіх часток
-  expectedCents: Cents; // позиції + сервіс
+  /** Усе призначено дійсним людям - можна показувати як готовий розподіл. */
+  ok: boolean;
+  /** Назви позицій, що лишились без власника (треба призначити/уточнити). */
+  unassigned: string[];
+  /** personId у призначеннях, яких немає серед people (баг даних) - їхні гроші НЕ враховані. */
+  unknownPeople: string[];
+  /** true, якщо надрукований підсумок чека не збігається з сумою позицій+сервіс (ймовірна помилка розпізнавання фото). */
+  totalMismatch: boolean;
+  sumCents: Cents; // фактично розподілена сума
+  expectedCents: Cents; // усі позиції + сервіс
+  receiptTotalCents: Cents; // підсумок, надрукований на чеку
 }
 
 /** Стабільний порядок людей: за іменем (укр), при рівності - за id. */
@@ -59,25 +68,30 @@ export function computeSplit(
 ): SplitResult {
   const order = stableOrder(people);
   const orderIndex = new Map(order.map((p, i) => [p.id, i]));
+  const known = new Set(people.map((p) => p.id));
   const subtotal = new Map<string, Cents>(people.map((p) => [p.id, 0]));
-  const issues: string[] = [];
+  const unassigned: string[] = [];
+  const unknownPeople = new Set<string>();
 
   const byUnit = new Map<string, string[]>();
   for (const a of assignments) byUnit.set(unitKey(a.itemId, a.unitIndex), a.personIds);
 
-  // 1) Розкидати кожну одиницю по її людях; залишок від ділення - за стабільним порядком.
+  // 1) Розкидати кожну одиницю по її ДІЙСНИХ людях; залишок від ділення - за стабільним порядком.
   let itemsCents = 0;
   for (const it of receipt.items) {
-    for (let u = 0; u < it.qty; u++) {
+    const qty = Math.max(0, Math.floor(it.qty)); // від'ємне/дробове -> 0 одиниць
+    for (let u = 0; u < qty; u++) {
       itemsCents += it.unitPriceCents;
-      const sharers = byUnit.get(unitKey(it.id, u));
-      if (!sharers || sharers.length === 0) {
-        issues.push(`Не призначено: ${it.name} (одиниця ${u + 1})`);
+      const raw = byUnit.get(unitKey(it.id, u)) ?? [];
+      for (const pid of raw) if (!known.has(pid)) unknownPeople.add(pid);
+      // дедуплікація + лише відомі люди
+      const ppl = [...new Set(raw)]
+        .filter((pid) => known.has(pid))
+        .sort((x, y) => (orderIndex.get(x) ?? 1e9) - (orderIndex.get(y) ?? 1e9));
+      if (ppl.length === 0) {
+        unassigned.push(it.name);
         continue;
       }
-      const ppl = [...sharers].sort(
-        (x, y) => (orderIndex.get(x) ?? 1e9) - (orderIndex.get(y) ?? 1e9)
-      );
       const base = Math.floor(it.unitPriceCents / ppl.length);
       let rem = it.unitPriceCents - base * ppl.length;
       for (const pid of ppl) {
@@ -91,7 +105,7 @@ export function computeSplit(
     }
   }
 
-  // 2) Сервісний збір пропорційно до підсумку; залишок - тим, у кого найбільша дробова частина.
+  // 2) Сервісний збір пропорційно до підсумку; залишок - найбільша дробова частина, при рівності - алфавіт.
   const sumSub = [...subtotal.values()].reduce((a, b) => a + b, 0);
   const service = new Map<string, Cents>(people.map((p) => [p.id, 0]));
   const svc = receipt.serviceChargeCents;
@@ -122,22 +136,27 @@ export function computeSplit(
     return { personId: p.id, subtotalCents: st, serviceCents: sv, totalCents: st + sv };
   });
 
-  // 4) Інваріанти.
   const sumCents = perPerson.reduce((a, b) => a + b.totalCents, 0);
   const expectedCents = itemsCents + svc;
-  if (sumCents !== expectedCents) {
-    issues.push(`Сума часток (${sumCents}) != позиції+сервіс (${expectedCents})`);
-  }
-  if (receipt.totalCents !== expectedCents) {
-    issues.push(`Підсумок чека (${receipt.totalCents}) != позиції+сервіс (${expectedCents})`);
-  }
+  const totalMismatch = receipt.totalCents > 0 && receipt.totalCents !== expectedCents;
+  const ok = receipt.items.length > 0 && unassigned.length === 0 && unknownPeople.size === 0;
 
-  return { perPerson, ok: issues.length === 0, issues, sumCents, expectedCents };
+  return {
+    perPerson,
+    ok,
+    unassigned,
+    unknownPeople: [...unknownPeople],
+    totalMismatch,
+    sumCents,
+    expectedCents,
+    receiptTotalCents: receipt.totalCents,
+  };
 }
 
-/** Копійки -> рядок '123,45'. */
+/** Копійки -> рядок '123,45'. Нецілі копійки округлюються (захист від некоректного вводу). */
 export function money(cents: Cents): string {
-  const sign = cents < 0 ? "-" : "";
-  const abs = Math.abs(cents);
+  const c = Math.round(cents);
+  const sign = c < 0 ? "-" : "";
+  const abs = Math.abs(c);
   return `${sign}${Math.floor(abs / 100)},${String(abs % 100).padStart(2, "0")}`;
 }

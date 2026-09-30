@@ -26,12 +26,15 @@ const EMPTY_RECEIPT: Receipt = { items: [], serviceChargeCents: 0, totalCents: 0
 const PALETTE = ["var(--p1)", "var(--p2)", "var(--p3)", "var(--accent-2)"];
 
 // Стабільний колір людини: "Я" завжди перший, решта - за порядком появи.
+// Понад палітру - детермінований відтінок за індексом (без колізій при 5+ людях).
 function colorFor(id: string, people: Person[]): string {
   if (id === "me") return PALETTE[0];
   const others = people.filter((p) => p.id !== "me");
   const i = others.findIndex((p) => p.id === id);
   if (i < 0) return "var(--accent)";
-  return PALETTE[(i % (PALETTE.length - 1)) + 1];
+  if (i < PALETTE.length - 1) return PALETTE[i + 1];
+  const hue = (200 + (i - (PALETTE.length - 2)) * 47) % 360;
+  return `hsl(${hue} 65% 62%)`;
 }
 
 type Screen = "upload" | "recognizing" | "confirm" | "listen" | "clarify" | "result";
@@ -85,6 +88,8 @@ export default function AppFlow() {
   const [dictMode, setDictMode] = useState<DictMode>("idle");
   const [parsing, setParsing] = useState(false);
   const dictationRef = useRef<DictationHandle | null>(null);
+  const genRef = useRef(0); // інвалідатор застарілих async-відповідей (гонки/скидання)
+  const errRef = useRef(false); // помилку голосу вже показано - не перезаписувати generic-ом
 
   const [assignments, setAssignments] = useState<UnitAssignment[]>([]);
   const [clarifications, setClarifications] = useState<Clarification[]>([]);
@@ -107,11 +112,13 @@ export default function AppFlow() {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
+    const gen = ++genRef.current;
     setNotice(null);
     setScreen("recognizing");
     try {
       const { imageBase64, mimeType } = await fileToBase64(file);
       const res = await callRecognize(imageBase64, mimeType);
+      if (gen !== genRef.current) return; // застаріло (скинули/почали інше)
       if (!res.receipt.items.length) throw new Error("Не вдалося прочитати позиції чека");
       setReceipt(res.receipt);
       setItemsMeta(res.itemsMeta);
@@ -119,6 +126,7 @@ export default function AppFlow() {
       if (res.error) setNotice(res.error);
       setScreen("confirm");
     } catch (err) {
+      if (gen !== genRef.current) return;
       setNotice(err instanceof Error ? err.message : "Не вдалося розпізнати чек. Спробуй інше фото");
       setScreen("upload");
     }
@@ -135,12 +143,14 @@ export default function AppFlow() {
     const text = rawTranscript.trim();
     setTranscript(text);
     if (!text) {
-      setNotice("Не почув. Натисни і скажи ще раз");
+      if (!errRef.current) setNotice("Не почув. Натисни і скажи ще раз");
       return;
     }
+    const gen = ++genRef.current;
     setParsing(true);
     try {
       const res = await callParse(text, receipt, people);
+      if (gen !== genRef.current) return;
       setPeople(res.people.length > 0 ? res.people : people);
       setAssignments(res.assignments);
       setClarifications(res.clarifications);
@@ -149,23 +159,26 @@ export default function AppFlow() {
       if (res.error) setNotice(res.error);
       setScreen(res.clarifications.length > 0 ? "clarify" : "result");
     } catch (err) {
+      if (gen !== genRef.current) return;
       setNotice(err instanceof Error ? err.message : "Не вдалося розібрати голос. Спробуй ще раз");
     } finally {
-      setParsing(false);
+      if (gen === genRef.current) setParsing(false);
     }
   }
 
   function record() {
-    if (dictMode === "listen") {
+    if (dictMode === "listen" || dictationRef.current) {
       dictationRef.current?.stop();
       return;
     }
+    errRef.current = false;
     setNotice(null);
     setTranscript("");
     const handle = startDictation(
       (text) => setTranscript(text),
       (finalText) => void finishListening(finalText),
       (reason) => {
+        errRef.current = true;
         setDictMode("idle");
         dictationRef.current = null;
         setNotice(
@@ -211,9 +224,11 @@ export default function AppFlow() {
     dictationRef.current = null;
     const text = rawTranscript.trim();
     if (!text) return;
+    const gen = ++genRef.current;
     setParsing(true);
     try {
       const res = await callParse(text, receipt, people);
+      if (gen !== genRef.current) return;
       setPeople(res.people.length > 0 ? res.people : people);
       if (res.assignments.length > 0) {
         setAssignments((prev) => mergeAssignments(prev, res.assignments));
@@ -226,22 +241,25 @@ export default function AppFlow() {
         setScreen("clarify");
       }
     } catch (err) {
+      if (gen !== genRef.current) return;
       setNotice(err instanceof Error ? err.message : "Не вдалося розібрати виправлення голосом");
     } finally {
-      setParsing(false);
+      if (gen === genRef.current) setParsing(false);
     }
   }
 
   function correct() {
-    if (dictMode === "correct") {
+    if (dictMode === "correct" || dictationRef.current) {
       dictationRef.current?.stop();
       return;
     }
+    errRef.current = false;
     setNotice(null);
     const handle = startDictation(
       () => {},
       (finalText) => void finishCorrection(finalText),
       (reason) => {
+        errRef.current = true;
         setDictMode("idle");
         dictationRef.current = null;
         setNotice(
@@ -260,6 +278,7 @@ export default function AppFlow() {
   }
 
   function reset() {
+    genRef.current++; // інвалідувати будь-які активні async-відповіді
     dictationRef.current?.stop();
     dictationRef.current = null;
     setDictMode("idle");
@@ -331,6 +350,7 @@ export default function AppFlow() {
                 receipt={receipt}
                 assignments={assignments}
                 dictMode={dictMode}
+                parsing={parsing}
                 onCorrect={correct}
                 onReset={reset}
               />
@@ -575,6 +595,7 @@ function Result({
   receipt,
   assignments,
   dictMode,
+  parsing,
   onCorrect,
   onReset,
 }: {
@@ -583,6 +604,7 @@ function Result({
   receipt: Receipt;
   assignments: UnitAssignment[];
   dictMode: DictMode;
+  parsing: boolean;
   onCorrect: () => void;
   onReset: () => void;
 }) {
@@ -617,15 +639,26 @@ function Result({
         })}
       </div>
 
-      {result.ok ? (
+      {result.ok && !result.totalMismatch && (
         <div className="settled">
           <span className="tick">
             <CheckIcon />
           </span>{" "}
           усе розкладено - сума сходиться
         </div>
-      ) : (
-        <div className="settled warn">Ще не все призначено</div>
+      )}
+      {result.ok && result.totalMismatch && (
+        <div className="settled warn">
+          Розподілено, але підсумок з чека не збігається - можливо, помилка розпізнавання фото
+        </div>
+      )}
+      {!result.ok && result.unknownPeople.length > 0 && (
+        <div className="settled warn">Є позиції на невідому людину - переговори голосом</div>
+      )}
+      {!result.ok && result.unknownPeople.length === 0 && result.unassigned.length > 0 && (
+        <div className="settled warn">
+          Ще не призначено: {[...new Set(result.unassigned)].join(", ")}
+        </div>
       )}
 
       <div className="mic-wrap sm">
@@ -633,6 +666,7 @@ function Result({
           className={`mic sm${correcting ? " on" : ""}`}
           aria-label={correcting ? "Завершити" : "Виправити голосом"}
           onClick={onCorrect}
+          disabled={parsing}
           whileHover={{ scale: 1.06 }}
           whileTap={{ scale: 0.94 }}
           transition={{ type: "spring", stiffness: 400, damping: 15 }}
@@ -640,12 +674,16 @@ function Result({
           {correcting ? <StopIcon /> : <MicIcon />}
         </motion.button>
         <span className="mic-cap">
-          {correcting ? "Слухаю... натисни, щоб завершити" : "Виправити голосом"}
+          {parsing
+            ? "Обробляю..."
+            : correcting
+              ? "Слухаю... натисни, щоб завершити"
+              : "Виправити голосом"}
         </span>
       </div>
 
       <div className="actions">
-        <button className="btn-ghost" onClick={onReset}>
+        <button className="btn-ghost" onClick={onReset} disabled={parsing}>
           Новий чек
         </button>
       </div>
