@@ -227,18 +227,17 @@ export default function AppFlow() {
     const gen = ++genRef.current;
     setParsing(true);
     try {
-      const res = await callParse(text, receipt, people);
+      // Режим "correction": модель отримує поточний розподіл і змінює ЛИШЕ
+      // згадане, не відкриваючи питань про інші позиції. Людей не додаємо.
+      const res = await callParse(text, receipt, people, "correction", assignments);
       if (gen !== genRef.current) return;
-      setPeople(res.people.length > 0 ? res.people : people);
-      if (res.assignments.length > 0) {
-        setAssignments((prev) => mergeAssignments(prev, res.assignments));
-      }
       setSource(res.source);
-      if (res.error) setNotice(res.error);
-      if (res.clarifications.length > 0) {
-        setClarifications(res.clarifications);
-        setClarifyIndex(0);
-        setScreen("clarify");
+      if (res.error) {
+        setNotice(res.error);
+      } else if (res.assignments.length > 0) {
+        setAssignments((prev) => mergeAssignments(prev, res.assignments));
+      } else {
+        setNotice("Не зрозумів, що виправити. Скажи, напр.: \"тірамісу брала Юля\"");
       }
     } catch (err) {
       if (gen !== genRef.current) return;

@@ -46,6 +46,10 @@ export interface ParseRequest {
   transcript: string;
   receipt: Receipt;
   people: Person[];
+  /** "correction" - репліка виправляє наявний розподіл (див. priorAssignments). */
+  mode?: "initial" | "correction";
+  /** Поточний розподіл (лише для mode="correction"): змінюємо ТІЛЬКИ згадане. */
+  priorAssignments?: UnitAssignment[];
 }
 
 export interface ParseResponse {

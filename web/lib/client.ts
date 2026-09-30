@@ -8,7 +8,7 @@ import type {
   RecognizeRequest,
   RecognizeResponse,
 } from "@/lib/api-types";
-import type { Person, Receipt } from "@/lib/split";
+import type { Person, Receipt, UnitAssignment } from "@/lib/split";
 
 /* --------------------------------- фото -> base64 --------------------------------- */
 
@@ -67,9 +67,14 @@ export function callRecognize(imageBase64: string, mimeType: string): Promise<Re
 export function callParse(
   transcript: string,
   receipt: Receipt,
-  people: Person[]
+  people: Person[],
+  mode: "initial" | "correction" = "initial",
+  priorAssignments?: UnitAssignment[]
 ): Promise<ParseResponse> {
-  const body: ParseRequest = { transcript, receipt, people };
+  const body: ParseRequest =
+    mode === "correction"
+      ? { transcript, receipt, people, mode, priorAssignments: priorAssignments ?? [] }
+      : { transcript, receipt, people };
   return postJson<ParseResponse>("/api/parse", body);
 }
 
