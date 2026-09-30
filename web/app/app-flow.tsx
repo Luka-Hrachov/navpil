@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import {
   computeSplit,
   money,
@@ -9,8 +9,18 @@ import {
   type Receipt,
   type UnitAssignment,
 } from "@/lib/split";
+import {
+  callParse,
+  callRecognize,
+  fileToBase64,
+  startDictation,
+  type DictationHandle,
+} from "@/lib/client";
+import type { Clarification, ItemMeta } from "@/lib/api-types";
 
-/* ------------------- мок-дані (замість моделей на цьому етапі) ------------------- */
+/* ------------------- дефолти й запасні (fallback) дані ------------------- */
+/* Використовуються, поки не прийшла відповідь бекенда, або якщо виклик
+   API/голосу недоступний — застосунок і без ключа має лишатись робочим. */
 
 const PEOPLE: Person[] = [
   { id: "me", name: "Я" },
@@ -19,7 +29,11 @@ const PEOPLE: Person[] = [
 ];
 const COLORS: Record<string, string> = { me: "var(--p1)", anya: "var(--p2)", sam: "var(--p3)" };
 
-const SAMPLE: Receipt & { itemsMeta: { id: string; name: string; qty: number; unitPriceCents: number; confidence: number }[] } = {
+function colorFor(id: string): string {
+  return COLORS[id] ?? "var(--accent)";
+}
+
+const SAMPLE: Receipt & { itemsMeta: ItemMeta[] } = {
   items: [
     { id: "borsch", name: "Борщ", qty: 2, unitPriceCents: 12000 },
     { id: "coffee", name: "Кава", qty: 2, unitPriceCents: 6500 },
@@ -36,7 +50,7 @@ const SAMPLE: Receipt & { itemsMeta: { id: string; name: string; qty: number; un
 
 const MOCK_TRANSCRIPT = "Борщ обидва мої, одну каву я, піцу ділимо втрьох.";
 
-// призначення після голосу (другу каву не сказали -> уточнимо)
+// запасні призначення, якщо /api/parse взагалі недоступний (мережева помилка)
 const BASE_ASSIGN: UnitAssignment[] = [
   { itemId: "borsch", unitIndex: 0, personIds: ["me"] },
   { itemId: "borsch", unitIndex: 1, personIds: ["me"] },
@@ -44,7 +58,16 @@ const BASE_ASSIGN: UnitAssignment[] = [
   { itemId: "pizza", unitIndex: 0, personIds: ["me", "anya", "sam"] },
 ];
 
+const FALLBACK_CLARIFICATIONS: Clarification[] = [
+  {
+    question: "Дві кави — хто брав другу?",
+    target: { itemId: "coffee", unitIndex: 1 },
+    options: PEOPLE.map((p) => p.id),
+  },
+];
+
 type Screen = "upload" | "recognizing" | "confirm" | "listen" | "clarify" | "result";
+type DictMode = "idle" | "listen" | "correct";
 
 const fade = {
   initial: { opacity: 0, y: 12 },
@@ -56,58 +79,240 @@ const fade = {
 
 export default function AppFlow() {
   const [screen, setScreen] = useState<Screen>("upload");
-  const [transcript, setTranscript] = useState("");
-  const [listening, setListening] = useState(false);
-  const [assignments, setAssignments] = useState<UnitAssignment[]>([]);
+  const [people, setPeople] = useState<Person[]>(PEOPLE);
+  const [receipt, setReceipt] = useState<Receipt>(SAMPLE);
+  const [itemsMeta, setItemsMeta] = useState<ItemMeta[]>(SAMPLE.itemsMeta);
+  const [source, setSource] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
-  const receipt: Receipt = SAMPLE;
+  const [transcript, setTranscript] = useState("");
+  const [dictMode, setDictMode] = useState<DictMode>("idle");
+  const [parsing, setParsing] = useState(false);
+  const dictationRef = useRef<DictationHandle | null>(null);
+
+  const [assignments, setAssignments] = useState<UnitAssignment[]>([]);
+  const [clarifications, setClarifications] = useState<Clarification[]>([]);
+  const [clarifyIndex, setClarifyIndex] = useState(0);
 
   const result = useMemo(
-    () => computeSplit(receipt, PEOPLE, assignments),
-    [assignments]
+    () => computeSplit(receipt, people, assignments),
+    [receipt, people, assignments]
   );
 
-  function pickPhoto() {
+  // якщо чекаємо уточнення, якого раптом нема (порожній масив/вихід за межі) — не зависати
+  useEffect(() => {
+    if (screen === "clarify" && !clarifications[clarifyIndex]) {
+      setScreen("result");
+    }
+  }, [screen, clarifications, clarifyIndex]);
+
+  // не лишати активне розпізнавання мовлення, якщо компонент розмонтовується
+  useEffect(() => {
+    return () => {
+      dictationRef.current?.stop();
+    };
+  }, []);
+
+  async function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // дозволити повторний вибір того ж файлу
+    if (!file) return;
+    setNotice(null);
     setScreen("recognizing");
-    window.setTimeout(() => setScreen("confirm"), 1400); // мок: «розпізнавання»
+    try {
+      const { imageBase64, mimeType } = await fileToBase64(file);
+      const res = await callRecognize(imageBase64, mimeType);
+      setReceipt(res.receipt);
+      setItemsMeta(res.itemsMeta);
+      setSource(res.source);
+      if (res.error) setNotice(res.error);
+      setScreen("confirm");
+    } catch (err) {
+      setNotice(
+        err instanceof Error ? err.message : "Не вдалося розпізнати чек — показано приклад"
+      );
+      setReceipt(SAMPLE);
+      setItemsMeta(SAMPLE.itemsMeta);
+      setSource("mock");
+      setScreen("confirm");
+    }
   }
+
   function confirmOk() {
+    setNotice(null);
     setScreen("listen");
   }
-  function record() {
-    setListening(true);
-    window.setTimeout(() => {
-      setTranscript(MOCK_TRANSCRIPT);
-      setListening(false);
+
+  async function finishListening(rawTranscript: string) {
+    setDictMode("idle");
+    dictationRef.current = null;
+    const text = rawTranscript.trim() || MOCK_TRANSCRIPT;
+    setTranscript(text);
+    setParsing(true);
+    try {
+      const res = await callParse(text, receipt, people);
+      setPeople(res.people.length > 0 ? res.people : people);
+      setAssignments(res.assignments);
+      setClarifications(res.clarifications);
+      setClarifyIndex(0);
+      setSource(res.source);
+      if (res.error) setNotice(res.error);
+      setScreen(res.clarifications.length > 0 ? "clarify" : "result");
+    } catch (err) {
+      setNotice(
+        err instanceof Error ? err.message : "Не вдалося розібрати голос — показано приклад"
+      );
       setAssignments(BASE_ASSIGN);
-      setScreen("clarify"); // друга кава неоднозначна
-    }, 1700);
+      setClarifications(FALLBACK_CLARIFICATIONS);
+      setClarifyIndex(0);
+      setScreen("clarify");
+    } finally {
+      setParsing(false);
+    }
   }
-  function answerClarify(personId: string) {
-    setAssignments((a) => [...a, { itemId: "coffee", unitIndex: 1, personIds: [personId] }]);
-    setScreen("result");
+
+  function record() {
+    if (dictMode === "listen") {
+      dictationRef.current?.stop();
+      return;
+    }
+    setNotice(null);
+    setTranscript("");
+    const handle = startDictation(
+      (text) => setTranscript(text),
+      (finalText) => void finishListening(finalText),
+      (reason) => {
+        setDictMode("idle");
+        dictationRef.current = null;
+        setNotice(`Голосовий ввід не спрацював (${reason}) — спробуй ще раз`);
+      }
+    );
+    if (!handle) {
+      // Web Speech API недоступний у цьому браузері — падаємо на запасний мок-транскрипт,
+      // але все одно проганяємо його через реальний /api/parse
+      setDictMode("listen");
+      window.setTimeout(() => {
+        void finishListening(MOCK_TRANSCRIPT);
+      }, 1200);
+      return;
+    }
+    dictationRef.current = handle;
+    setDictMode("listen");
   }
+
+  function resolvePersonId(option: string): string {
+    const byId = people.find((p) => p.id === option);
+    if (byId) return byId.id;
+    const byName = people.find((p) => p.name.toLowerCase() === option.toLowerCase());
+    if (byName) return byName.id;
+    return option;
+  }
+
+  function answerClarify(option: string) {
+    const current = clarifications[clarifyIndex];
+    if (current) {
+      const personId = resolvePersonId(option);
+      setAssignments((a) => [
+        ...a.filter(
+          (x) => !(x.itemId === current.target.itemId && x.unitIndex === current.target.unitIndex)
+        ),
+        { itemId: current.target.itemId, unitIndex: current.target.unitIndex, personIds: [personId] },
+      ]);
+    }
+    const next = clarifyIndex + 1;
+    if (next < clarifications.length) {
+      setClarifyIndex(next);
+    } else {
+      setScreen("result");
+    }
+  }
+
+  async function finishCorrection(rawTranscript: string) {
+    setDictMode("idle");
+    dictationRef.current = null;
+    const text = rawTranscript.trim();
+    if (!text) return;
+    setParsing(true);
+    try {
+      const res = await callParse(text, receipt, people);
+      setPeople(res.people.length > 0 ? res.people : people);
+      if (res.assignments.length > 0) {
+        setAssignments((prev) => mergeAssignments(prev, res.assignments));
+      }
+      setSource(res.source);
+      if (res.error) setNotice(res.error);
+      if (res.clarifications.length > 0) {
+        setClarifications(res.clarifications);
+        setClarifyIndex(0);
+        setScreen("clarify");
+      }
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Не вдалося розібрати виправлення голосом");
+    } finally {
+      setParsing(false);
+    }
+  }
+
   function correct() {
-    // демо голосового виправлення: «другу каву брав Сем»
-    setAssignments((a) => {
-      const rest = a.filter((x) => !(x.itemId === "coffee" && x.unitIndex === 1));
-      return [...rest, { itemId: "coffee", unitIndex: 1, personIds: ["sam"] }];
-    });
+    if (dictMode === "correct") {
+      dictationRef.current?.stop();
+      return;
+    }
+    setNotice(null);
+    const handle = startDictation(
+      () => {},
+      (finalText) => void finishCorrection(finalText),
+      (reason) => {
+        setDictMode("idle");
+        dictationRef.current = null;
+        setNotice(`Голосовий ввід не спрацював (${reason})`);
+      }
+    );
+    if (!handle) {
+      // демо-фолбек без Web Speech API: «другу каву брав Сем», якщо така позиція/особа є
+      setAssignments((a) => {
+        const sam = people.find((p) => p.id === "sam");
+        const hasSecondCoffee = itemsMeta.some((it) => it.id === "coffee" && it.qty > 1);
+        if (!sam || !hasSecondCoffee) return a;
+        const rest = a.filter((x) => !(x.itemId === "coffee" && x.unitIndex === 1));
+        return [...rest, { itemId: "coffee", unitIndex: 1, personIds: [sam.id] }];
+      });
+      return;
+    }
+    dictationRef.current = handle;
+    setDictMode("correct");
   }
+
   function reset() {
+    dictationRef.current?.stop();
+    dictationRef.current = null;
+    setDictMode("idle");
+    setParsing(false);
     setScreen("upload");
     setTranscript("");
     setAssignments([]);
+    setClarifications([]);
+    setClarifyIndex(0);
+    setNotice(null);
+    setSource(null);
+    setReceipt(SAMPLE);
+    setItemsMeta(SAMPLE.itemsMeta);
+    setPeople(PEOPLE);
   }
 
   return (
     <main className="stage">
       <div className="phone">
-        <Header />
+        <Header source={source} />
+        {notice && (
+          <div className="settled warn" style={{ marginBottom: 4 }}>
+            {notice}
+          </div>
+        )}
         <AnimatePresence mode="wait">
           {screen === "upload" && (
             <motion.div key="upload" {...fade}>
-              <Upload onPick={pickPhoto} />
+              <Upload onPick={handleFileChange} />
             </motion.div>
           )}
           {screen === "recognizing" && (
@@ -117,22 +322,40 @@ export default function AppFlow() {
           )}
           {screen === "confirm" && (
             <motion.div key="confirm" {...fade}>
-              <Confirm onOk={confirmOk} />
+              <Confirm receipt={receipt} itemsMeta={itemsMeta} onOk={confirmOk} />
             </motion.div>
           )}
           {screen === "listen" && (
             <motion.div key="listen" {...fade}>
-              <Listen listening={listening} transcript={transcript} onRecord={record} />
+              <Listen
+                receipt={receipt}
+                itemsMeta={itemsMeta}
+                dictMode={dictMode}
+                parsing={parsing}
+                transcript={transcript}
+                onRecord={record}
+              />
             </motion.div>
           )}
-          {screen === "clarify" && (
-            <motion.div key="clarify" {...fade}>
-              <Clarify onAnswer={answerClarify} />
+          {screen === "clarify" && clarifications[clarifyIndex] && (
+            <motion.div key={`clarify-${clarifyIndex}`} {...fade}>
+              <Clarify
+                question={clarifications[clarifyIndex].question}
+                options={clarifications[clarifyIndex].options}
+                people={people}
+                onAnswer={answerClarify}
+              />
             </motion.div>
           )}
           {screen === "result" && (
             <motion.div key="result" {...fade}>
-              <Result result={result} onCorrect={correct} onReset={reset} />
+              <Result
+                people={people}
+                result={result}
+                dictMode={dictMode}
+                onCorrect={correct}
+                onReset={reset}
+              />
             </motion.div>
           )}
         </AnimatePresence>
@@ -141,9 +364,17 @@ export default function AppFlow() {
   );
 }
 
+/** Мерджить нові UnitAssignment поверх старих за ключем (itemId, unitIndex). */
+function mergeAssignments(prev: UnitAssignment[], next: UnitAssignment[]): UnitAssignment[] {
+  const key = (a: UnitAssignment) => `${a.itemId}#${a.unitIndex}`;
+  const map = new Map<string, UnitAssignment>(prev.map((a) => [key(a), a]));
+  for (const a of next) map.set(key(a), a);
+  return [...map.values()];
+}
+
 /* --------------------------------- екрани --------------------------------- */
 
-function Header() {
+function Header({ source }: { source: string | null }) {
   return (
     <div className="top">
       <div className="logo">Н</div>
@@ -151,11 +382,17 @@ function Header() {
         <h1>Навпіл</h1>
         <span>рахунок голосом</span>
       </div>
+      {source === "mock" && (
+        <span className="chip">
+          <span className="dot" />
+          мок
+        </span>
+      )}
     </div>
   );
 }
 
-function Upload({ onPick }: { onPick: () => void }) {
+function Upload({ onPick }: { onPick: (e: ChangeEvent<HTMLInputElement>) => void }) {
   return (
     <div className="upload">
       <div className="upload-art">🧾</div>
@@ -181,11 +418,22 @@ function Recognizing() {
   );
 }
 
-function ReceiptRows({ editable = false }: { editable?: boolean }) {
+function ReceiptRows({
+  receipt,
+  itemsMeta,
+  editable = false,
+}: {
+  receipt: Receipt;
+  itemsMeta: ItemMeta[];
+  editable?: boolean;
+}) {
+  const itemsCents = itemsMeta.reduce((s, it) => s + it.unitPriceCents * it.qty, 0);
+  const svcPercent =
+    itemsCents > 0 ? Math.round((receipt.serviceChargeCents / itemsCents) * 100) : null;
   return (
     <div className="card">
-      <h3>Чек · Ресторан «Веранда»</h3>
-      {SAMPLE.itemsMeta.map((it) => (
+      <h3>Чек</h3>
+      {itemsMeta.map((it) => (
         <div className={`row${editable && it.confidence < 0.8 ? " low" : ""}`} key={it.id}>
           <span className="nm">
             {it.name} {it.qty > 1 && <span className="q">×{it.qty}</span>}
@@ -196,23 +444,31 @@ function ReceiptRows({ editable = false }: { editable?: boolean }) {
       ))}
       <div className="row">
         <span className="nm">
-          Сервіс <span className="q">10%</span>
+          Сервіс {svcPercent !== null && <span className="q">{svcPercent}%</span>}
         </span>
-        <span className="amt">{money(SAMPLE.serviceChargeCents)}</span>
+        <span className="amt">{money(receipt.serviceChargeCents)}</span>
       </div>
       <div className="row total">
         <span className="nm">Разом</span>
-        <span className="amt">{money(SAMPLE.totalCents)}</span>
+        <span className="amt">{money(receipt.totalCents)}</span>
       </div>
     </div>
   );
 }
 
-function Confirm({ onOk }: { onOk: () => void }) {
+function Confirm({
+  receipt,
+  itemsMeta,
+  onOk,
+}: {
+  receipt: Receipt;
+  itemsMeta: ItemMeta[];
+  onOk: () => void;
+}) {
   return (
     <>
       <p className="screen-lead">Перевір, чи все правильно. Підсвічене — сумнівне.</p>
-      <ReceiptRows editable />
+      <ReceiptRows receipt={receipt} itemsMeta={itemsMeta} editable />
       <div className="actions">
         <button className="btn-primary" onClick={onOk}>
           Все вірно
@@ -224,50 +480,74 @@ function Confirm({ onOk }: { onOk: () => void }) {
 }
 
 function Listen({
-  listening,
+  receipt,
+  itemsMeta,
+  dictMode,
+  parsing,
   transcript,
   onRecord,
 }: {
-  listening: boolean;
+  receipt: Receipt;
+  itemsMeta: ItemMeta[];
+  dictMode: DictMode;
+  parsing: boolean;
   transcript: string;
   onRecord: () => void;
 }) {
+  const listening = dictMode === "listen";
+  const caption = parsing ? "Обробляю…" : listening ? "Слухаю…" : "Натисни і скажи, хто що брав";
   return (
     <>
-      <ReceiptRows />
+      <ReceiptRows receipt={receipt} itemsMeta={itemsMeta} />
       <div className="mic-wrap">
         <motion.button
           className={`mic${listening ? " on" : ""}`}
           aria-label="Говорити"
           onClick={onRecord}
+          disabled={parsing}
           whileHover={{ scale: 1.06 }}
           whileTap={{ scale: 0.94 }}
           transition={{ type: "spring", stiffness: 400, damping: 15 }}
         >
           <MicIcon />
         </motion.button>
-        <span className="mic-cap">
-          {listening ? "Слухаю…" : "Натисни і скажи, хто що брав"}
-        </span>
+        <span className="mic-cap">{caption}</span>
       </div>
       {transcript && <div className="bubble">{transcript}</div>}
     </>
   );
 }
 
-function Clarify({ onAnswer }: { onAnswer: (id: string) => void }) {
+function Clarify({
+  question,
+  options,
+  people,
+  onAnswer,
+}: {
+  question: string;
+  options: string[];
+  people: Person[];
+  onAnswer: (option: string) => void;
+}) {
   return (
     <div className="sheet">
-      <p className="screen-lead">Дві кави — хто брав другу?</p>
+      <p className="screen-lead">{question}</p>
       <div className="chips">
-        {PEOPLE.map((p) => (
-          <button key={p.id} className="chip-btn" onClick={() => onAnswer(p.id)}>
-            <span className="ava sm" style={{ background: COLORS[p.id] }}>
-              {p.name[0]}
-            </span>
-            {p.name}
-          </button>
-        ))}
+        {options.map((opt) => {
+          const person =
+            people.find((p) => p.id === opt) ??
+            people.find((p) => p.name.toLowerCase() === opt.toLowerCase());
+          const label = person?.name ?? opt;
+          const color = person ? colorFor(person.id) : "var(--accent)";
+          return (
+            <button key={opt} className="chip-btn" onClick={() => onAnswer(opt)}>
+              <span className="ava sm" style={{ background: color }}>
+                {label[0]?.toUpperCase()}
+              </span>
+              {label}
+            </button>
+          );
+        })}
       </div>
       <p className="mic-cap center">Обери або скажи голосом</p>
     </div>
@@ -275,19 +555,25 @@ function Clarify({ onAnswer }: { onAnswer: (id: string) => void }) {
 }
 
 function Result({
+  people,
   result,
+  dictMode,
   onCorrect,
   onReset,
 }: {
+  people: Person[];
   result: ReturnType<typeof computeSplit>;
+  dictMode: DictMode;
   onCorrect: () => void;
   onReset: () => void;
 }) {
+  const correcting = dictMode === "correct";
   return (
     <>
       <div className="people">
         {result.perPerson.map((r) => {
-          const p = PEOPLE.find((x) => x.id === r.personId)!;
+          const p = people.find((x) => x.id === r.personId);
+          const name = p?.name ?? r.personId;
           return (
             <motion.div
               key={r.personId}
@@ -297,10 +583,10 @@ function Result({
               animate={{ scale: 1, opacity: 1 }}
               transition={{ type: "spring", stiffness: 300, damping: 22 }}
             >
-              <div className="ava" style={{ background: COLORS[p.id] }}>
-                {p.name[0]}
+              <div className="ava" style={{ background: colorFor(r.personId) }}>
+                {name[0]?.toUpperCase()}
               </div>
-              <div className="who">{p.name}</div>
+              <div className="who">{name}</div>
               <div className="sum">{money(r.totalCents)}</div>
             </motion.div>
           );
@@ -317,7 +603,7 @@ function Result({
 
       <div className="mic-wrap sm">
         <motion.button
-          className="mic sm"
+          className={`mic sm${correcting ? " on" : ""}`}
           aria-label="Виправити голосом"
           onClick={onCorrect}
           whileHover={{ scale: 1.06 }}
@@ -326,7 +612,9 @@ function Result({
         >
           <MicIcon />
         </motion.button>
-        <span className="mic-cap">Виправити голосом · напр. «другу каву брав Сем»</span>
+        <span className="mic-cap">
+          {correcting ? "Слухаю…" : "Виправити голосом · напр. «другу каву брав Сем»"}
+        </span>
       </div>
 
       <div className="actions">
