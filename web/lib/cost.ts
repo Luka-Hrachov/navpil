@@ -22,18 +22,32 @@ export const GEMINI_OUTPUT_USD_PER_1M_TOKENS = 2.5; // ПРИПУЩЕННЯ: $2.
 /** Токени одного виклику Gemini (з usageMetadata відповіді generateContent). */
 export interface TokenUsage {
   input: number;
+  /**
+   * candidatesTokenCount - видимі токени відповіді. УВАГА: у Gemini 2.5 Flash
+   * це НЕ всі токени, що тарифікуються за output-ціною: модель ще витрачає
+   * "thinking"-токени (thoughtsTokenCount), яких тут немає, але які Google
+   * рахує за тією ж output-ціною. Тому для вартості нижче беремо billable
+   * output = total - input (див. costUsd).
+   */
   output: number;
+  /** totalTokenCount = input + output + thinking (thoughtsTokenCount). */
   total: number;
 }
 
 /**
  * Оцінка вартості ОДНОГО виклику Gemini в USD за припущеними цінами вище.
- * usage.total у розрахунку не бере участі напряму (він лише для логів/UI) -
- * рахунок Google завжди йде окремо за input і output токенами.
+ *
+ * Білабельний output = max(output, total - input): у Gemini 2.5 Flash за
+ * output-ціною тарифікуються і видимі токени відповіді, і "thinking"-токени
+ * (thoughtsTokenCount). Видимий output їх не містить, а (total - input) -
+ * містить. max(...) - запобіжник, якщо total відсутній/занижений (напр. на
+ * mock-відповіді без реального usageMetadata), щоб не порахувати менше за
+ * видимий output.
  */
 export function costUsd(usage: TokenUsage): number {
+  const billableOutput = Math.max(usage.output, usage.total - usage.input);
   const inputUsd = (usage.input / 1_000_000) * GEMINI_INPUT_USD_PER_1M_TOKENS;
-  const outputUsd = (usage.output / 1_000_000) * GEMINI_OUTPUT_USD_PER_1M_TOKENS;
+  const outputUsd = (billableOutput / 1_000_000) * GEMINI_OUTPUT_USD_PER_1M_TOKENS;
   return inputUsd + outputUsd;
 }
 
