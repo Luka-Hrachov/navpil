@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="uk"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Навпіл · прев'ю дизайну</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&display=swap" rel="stylesheet">
+<style>
+/* ---------- THEME TOKENS ---------- */
+:root{
+  --font-sans:'Inter',system-ui,sans-serif; --font-mono:'Geist Mono',monospace;
+  --bg:#FAF7F2; --surface:#FFFFFF; --surface2:#FBF8F3; --text:#2A2622; --muted:#8A8178;
+  --accent:#16A46A; --accent-ink:#0B6B44; --accent-soft:#E4F5EC; --border:#ECE6DD;
+  --p1:#16A46A; --p2:#E8973A; --p3:#3B82F6;
+  --radius:20px; --shadow:0 18px 50px -20px rgba(60,50,40,.28); --glow:none;
+}
+:root[data-theme="dark"]{
+  --bg:#0E0F13; --surface:#181A21; --surface2:#1F222B; --text:#EDEFF5; --muted:#99A0B0;
+  --accent:#8B7BFF; --accent-ink:#B9AEFF; --accent-soft:#211F3A; --border:#2A2E3A;
+  --p1:#8B7BFF; --p2:#39D6A6; --p3:#5AB0FF;
+  --shadow:0 24px 60px -18px rgba(0,0,0,.7); --glow:0 0 40px -6px rgba(139,123,255,.55);
+  color-scheme:dark;
+}
+:root[data-theme="fintech"]{
+  --bg:#F4F6FB; --surface:#FFFFFF; --surface2:#F7F9FC; --text:#0F172A; --muted:#64748B;
+  --accent:#4F46E5; --accent-ink:#3A33C7; --accent-soft:#ECEEFF; --border:#E4E8F1;
+  --p1:#4F46E5; --p2:#0EA5A0; --p3:#F59E0B;
+  --radius:14px; --shadow:0 16px 44px -22px rgba(30,41,90,.35);
+}
+:root[data-theme="pastel"]{
+  --bg:#FBF6FF; --surface:#FFFFFF; --surface2:#FBF5FF; --text:#3B3450; --muted:#9C93B0;
+  --accent:#A78BFA; --accent-ink:#7C5CE0; --accent-soft:#F1E9FF; --border:#F0E7FB;
+  --p1:#A78BFA; --p2:#FB9EB5; --p3:#67C6E3;
+  --radius:26px; --shadow:0 20px 50px -20px rgba(150,110,200,.3);
+}
+/* ---------- FONT SETS ---------- */
+:root[data-font="inter"]{ --font-sans:'Inter',sans-serif; --font-mono:'Geist Mono',monospace; }
+:root[data-font="geist"]{ --font-sans:'Geist',sans-serif; --font-mono:'Geist Mono',monospace; }
+:root[data-font="satoshi"]{ --font-sans:'Satoshi',sans-serif; --font-mono:'JetBrains Mono',monospace; }
+
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--text);font-family:var(--font-sans);
+  transition:background-color .55s ease,color .55s ease;
+  min-height:100vh;padding:0 16px 60px;
+  padding-top:calc(env(safe-area-inset-top,0px));}
+
+/* ---------- CONTROL BAR ---------- */
+.controls{position:sticky;top:0;z-index:20;margin:0 -16px 22px;
+  padding:12px 16px calc(12px);
+  background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:blur(14px);
+  border-bottom:1px solid var(--border);
+  display:flex;gap:18px;flex-wrap:wrap;align-items:center;transition:background-color .55s,border-color .55s}
+.cgroup{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.clabel{font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.3px}
+.seg{display:flex;gap:5px;background:var(--surface2);border:1px solid var(--border);
+  border-radius:12px;padding:4px;transition:.4s}
+.seg button{border:none;background:none;color:var(--muted);font:inherit;font-size:13px;font-weight:600;
+  padding:6px 12px;border-radius:9px;cursor:pointer;transition:.22s cubic-bezier(.34,1.56,.64,1)}
+.seg button:hover{color:var(--text)}
+.seg button.on{background:var(--accent);color:#fff;box-shadow:0 6px 16px -8px var(--accent)}
+:root[data-theme="dark"] .seg button.on{color:#12101f}
+.hint{font-size:12.5px;color:var(--muted);margin-left:auto}
+
+/* ---------- STAGE / PHONE ---------- */
+.stage{display:flex;justify-content:center;padding-top:8px}
+.phone{width:100%;max-width:392px;background:var(--surface);border:1px solid var(--border);
+  border-radius:34px;box-shadow:var(--shadow),var(--glow);padding:22px 20px 26px;
+  transition:background-color .55s,border-color .55s,box-shadow .55s}
+:root[data-theme="fintech"] .phone{border-radius:24px}
+
+.top{display:flex;align-items:center;gap:11px;margin-bottom:18px}
+.logo{width:40px;height:40px;border-radius:12px;background:var(--accent);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px;
+  box-shadow:0 8px 20px -8px var(--accent);transition:.5s}
+:root[data-theme="dark"] .logo{color:#12101f}
+.brand h1{margin:0;font-size:19px;font-weight:700;letter-spacing:-.3px}
+.brand span{font-size:12.5px;color:var(--muted)}
+
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;
+  padding:5px 11px;border-radius:999px;background:var(--accent-soft);color:var(--accent-ink)}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--accent);
+  box-shadow:0 0 0 0 var(--accent);animation:ping 1.8s infinite}
+@keyframes ping{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 60%,transparent)}
+  70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}
+
+.card{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);
+  padding:15px 16px;margin-top:14px;transition:background-color .55s,border-color .55s,transform .3s}
+.card:hover{transform:translateY(-2px)}
+.card h3{margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:700}
+
+.row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;
+  border-top:1px solid var(--border)}
+.row:first-of-type{border-top:none}
+.row .nm{font-size:14.5px;font-weight:500}
+.row .q{color:var(--muted);font-weight:500;font-size:13px}
+.row .amt{font-family:var(--font-mono);font-size:14px;font-weight:500;font-variant-numeric:tabular-nums}
+.row.shared .nm::after{content:'спільна';font-family:var(--font-sans);font-size:10px;font-weight:600;
+  margin-left:7px;color:var(--accent-ink);background:var(--accent-soft);padding:2px 7px;border-radius:999px;vertical-align:1px}
+.row.total{border-top:1.5px solid var(--text);margin-top:4px;padding-top:11px}
+.row.total .nm{font-weight:700}.row.total .amt{font-weight:600;font-size:15px}
+
+/* people */
+.people{display:flex;gap:9px;margin-top:16px}
+.person{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);
+  padding:13px 10px;text-align:center;transition:background-color .55s,border-color .55s,transform .3s}
+.person:hover{transform:translateY(-2px)}
+.ava{width:34px;height:34px;border-radius:50%;margin:0 auto 8px;color:#fff;font-weight:700;font-size:14px;
+  display:flex;align-items:center;justify-content:center}
+.p1 .ava{background:var(--p1)} .p2 .ava{background:var(--p2)} .p3 .ava{background:var(--p3)}
+.person .who{font-size:12.5px;color:var(--muted);font-weight:600}
+.person .sum{font-family:var(--font-mono);font-size:16px;font-weight:600;margin-top:3px;font-variant-numeric:tabular-nums}
+
+/* mic */
+.mic-wrap{display:flex;flex-direction:column;align-items:center;gap:9px;margin:20px 0 6px}
+.mic{width:66px;height:66px;border-radius:50%;border:none;cursor:pointer;
+  background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;
+  box-shadow:0 14px 30px -10px var(--accent);transition:transform .25s cubic-bezier(.34,1.56,.64,1);position:relative}
+:root[data-theme="dark"] .mic{color:#12101f}
+.mic:hover{transform:scale(1.06)}
+.mic::before{content:'';position:absolute;inset:0;border-radius:50%;
+  box-shadow:0 0 0 0 var(--accent);animation:mic 2.4s infinite}
+@keyframes mic{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 45%,transparent)}
+  70%{box-shadow:0 0 0 16px transparent}100%{box-shadow:0 0 0 0 transparent}}
+.mic svg{width:26px;height:26px}
+.mic-cap{font-size:12.5px;color:var(--muted)}
+
+.settled{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:16px;
+  font-size:13px;font-weight:600;color:var(--accent-ink)}
+.settled .tick{width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:12px}
+:root[data-theme="dark"] .settled .tick{color:#12101f}
+
+/* reveal animation (replays on theme/font switch) */
+.reveal>*{opacity:0;transform:translateY(10px);animation:rise .6s cubic-bezier(.22,1,.36,1) forwards}
+.reveal>*:nth-child(1){animation-delay:.03s}.reveal>*:nth-child(2){animation-delay:.09s}
+.reveal>*:nth-child(3){animation-delay:.15s}.reveal>*:nth-child(4){animation-delay:.21s}
+.reveal>*:nth-child(5){animation-delay:.27s}.reveal>*:nth-child(6){animation-delay:.33s}
+@keyframes rise{to{opacity:1;transform:none}}
+</style></head>
+<body>
+
+<div class="controls">
+  <div class="cgroup"><span class="clabel">Тема</span>
+    <div class="seg" id="themeSeg">
+      <button data-v="warm" class="on">Тепла</button>
+      <button data-v="dark">Темна</button>
+      <button data-v="fintech">Fintech</button>
+      <button data-v="pastel">Пастель</button>
+    </div>
+  </div>
+  <div class="cgroup"><span class="clabel">Шрифт</span>
+    <div class="seg" id="fontSeg">
+      <button data-v="inter" class="on">Inter</button>
+      <button data-v="geist">Geist</button>
+      <button data-v="satoshi">Satoshi</button>
+    </div>
+  </div>
+  <span class="hint">перемикай і дивись наживо →</span>
+</div>
+
+<div class="stage">
+  <div class="phone reveal" id="phone">
+    <div class="top">
+      <div class="logo">Н</div>
+      <div class="brand"><h1>Навпіл</h1><span>рахунок голосом</span></div>
+      <span class="chip" style="margin-left:auto"><span class="dot"></span>розпізнано</span>
+    </div>
+
+    <div class="card">
+      <h3>Чек · Ресторан «Веранда»</h3>
+      <div class="row"><span class="nm">Борщ <span class="q">×2</span></span><span class="amt">240,00</span></div>
+      <div class="row"><span class="nm">Кава <span class="q">×2</span></span><span class="amt">130,00</span></div>
+      <div class="row shared"><span class="nm">Піца</span><span class="amt">320,00</span></div>
+      <div class="row"><span class="nm">Сервіс <span class="q">10%</span></span><span class="amt">69,00</span></div>
+      <div class="row total"><span class="nm">Разом</span><span class="amt">759,00</span></div>
+    </div>
+
+    <div class="mic-wrap">
+      <button class="mic" aria-label="Говорити">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><path d="M12 18v4"/></svg>
+      </button>
+      <span class="mic-cap">натисни і скажи, хто що брав</span>
+    </div>
+
+    <div class="people">
+      <div class="person p1"><div class="ava">Я</div><div class="who">Я</div><div class="sum" data-to="285">0,00</div></div>
+      <div class="person p2"><div class="ava">А</div><div class="who">Аня</div><div class="sum" data-to="210">0,00</div></div>
+      <div class="person p3"><div class="ava">С</div><div class="who">Сем</div><div class="sum" data-to="264">0,00</div></div>
+    </div>
+
+    <div class="settled"><span class="tick">✓</span> усе розкладено · сума сходиться</div>
+  </div>
+</div>
+
+<script>
+var root=document.documentElement, phone=document.getElementById('phone');
+function seg(id,attr){
+  var box=document.getElementById(id);
+  box.addEventListener('click',function(e){
+    var b=e.target.closest('button'); if(!b) return;
+    box.querySelectorAll('button').forEach(function(x){x.classList.remove('on')});
+    b.classList.add('on'); root.setAttribute(attr,b.dataset.v);
+    replay();
+  });
+}
+seg('themeSeg','data-theme'); seg('fontSeg','data-font');
+
+function countUp(){
+  document.querySelectorAll('.sum').forEach(function(el){
+    var to=+el.dataset.to, t0=null, dur=650;
+    function step(ts){ if(!t0)t0=ts; var p=Math.min((ts-t0)/dur,1);
+      var e=1-Math.pow(1-p,3); var v=(to*e);
+      el.textContent=v.toFixed(2).replace('.',','); if(p<1)requestAnimationFrame(step); }
+    requestAnimationFrame(step);
+  });
+}
+function replay(){
+  phone.classList.remove('reveal'); void phone.offsetWidth; phone.classList.add('reveal');
+  countUp();
+}
+root.setAttribute('data-theme','warm'); root.setAttribute('data-font','inter');
+countUp();
+</script>
+</body></html>
