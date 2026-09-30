@@ -78,7 +78,13 @@ const fade = {
 /* --------------------------------- застосунок --------------------------------- */
 
 export default function AppFlow() {
-  const [screen, setScreen] = useState<Screen>("upload");
+  const devScreen =
+    typeof window !== "undefined"
+      ? (new URLSearchParams(window.location.search).get("screen") as Screen | null)
+      : null;
+  const [screen, setScreen] = useState<Screen>(
+    devScreen && devScreen !== "upload" ? devScreen : "upload"
+  );
   const [people, setPeople] = useState<Person[]>(PEOPLE);
   const [receipt, setReceipt] = useState<Receipt>(SAMPLE);
   const [itemsMeta, setItemsMeta] = useState<ItemMeta[]>(SAMPLE.itemsMeta);
@@ -90,8 +96,16 @@ export default function AppFlow() {
   const [parsing, setParsing] = useState(false);
   const dictationRef = useRef<DictationHandle | null>(null);
 
-  const [assignments, setAssignments] = useState<UnitAssignment[]>([]);
-  const [clarifications, setClarifications] = useState<Clarification[]>([]);
+  const [assignments, setAssignments] = useState<UnitAssignment[]>(
+    devScreen === "result"
+      ? [...BASE_ASSIGN, { itemId: "coffee", unitIndex: 1, personIds: ["anya"] }]
+      : devScreen === "clarify"
+        ? BASE_ASSIGN
+        : []
+  );
+  const [clarifications, setClarifications] = useState<Clarification[]>(
+    devScreen === "clarify" ? FALLBACK_CLARIFICATIONS : []
+  );
   const [clarifyIndex, setClarifyIndex] = useState(0);
 
   const result = useMemo(
@@ -112,6 +126,8 @@ export default function AppFlow() {
       dictationRef.current?.stop();
     };
   }, []);
+
+
 
   async function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -302,14 +318,14 @@ export default function AppFlow() {
 
   return (
     <main className="stage">
-      <div className="phone">
-        <Header source={source} />
+      <div className="app">
+        {screen !== "upload" && <Header source={source} />}
         {notice && (
           <div className="settled warn" style={{ marginBottom: 4 }}>
             {notice}
           </div>
         )}
-        <AnimatePresence mode="wait">
+        <AnimatePresence mode="wait" initial={false}>
           {screen === "upload" && (
             <motion.div key="upload" {...fade}>
               <Upload onPick={handleFileChange} />
@@ -394,9 +410,33 @@ function Header({ source }: { source: string | null }) {
 
 function Upload({ onPick }: { onPick: (e: ChangeEvent<HTMLInputElement>) => void }) {
   return (
-    <div className="upload">
-      <div className="upload-art">🧾</div>
-      <p className="upload-lead">Сфотографуй чек — і кожен дізнається свою частку.</p>
+    <div className="hero">
+      <div className="hero-mark">Н</div>
+      <h1>Навпіл</h1>
+      <p className="tag">Сфотографуй чек, скажи хто що брав — і кожен бачить свою частку.</p>
+      <div className="hero-receipt" aria-hidden>
+        <ReceiptRows receipt={SAMPLE} itemsMeta={SAMPLE.itemsMeta} />
+      </div>
+      <div className="steps">
+        <div className="step">
+          <div className="si">
+            <CameraIcon />
+          </div>
+          Фото чека
+        </div>
+        <div className="step">
+          <div className="si">
+            <MicIcon />
+          </div>
+          Голос
+        </div>
+        <div className="step">
+          <div className="si">
+            <CheckIcon />
+          </div>
+          Готово
+        </div>
+      </div>
       <label className="btn-primary">
         Сфотографувати чек
         <input type="file" accept="image/*" capture="environment" hidden onChange={onPick} />
@@ -428,29 +468,42 @@ function ReceiptRows({
   editable?: boolean;
 }) {
   const itemsCents = itemsMeta.reduce((s, it) => s + it.unitPriceCents * it.qty, 0);
-  const svcPercent =
-    itemsCents > 0 ? Math.round((receipt.serviceChargeCents / itemsCents) * 100) : null;
+  const svcPercent = itemsCents > 0 ? Math.round((receipt.serviceChargeCents / itemsCents) * 100) : 0;
   return (
-    <div className="card">
-      <h3>Чек</h3>
-      {itemsMeta.map((it) => (
-        <div className={`row${editable && it.confidence < 0.8 ? " low" : ""}`} key={it.id}>
-          <span className="nm">
-            {it.name} {it.qty > 1 && <span className="q">×{it.qty}</span>}
-            {editable && it.confidence < 0.8 && <span className="tag">перевір</span>}
-          </span>
-          <span className="amt">{money(it.unitPriceCents * it.qty)}</span>
+    <div className="receipt-wrap">
+      <div className="receipt">
+        <div className="r-head">
+          <div className="r-title">Ч Е К</div>
+          <div className="r-sub">НАВПІЛ · дякуємо за візит</div>
         </div>
-      ))}
-      <div className="row">
-        <span className="nm">
-          Сервіс {svcPercent !== null && <span className="q">{svcPercent}%</span>}
-        </span>
-        <span className="amt">{money(receipt.serviceChargeCents)}</span>
-      </div>
-      <div className="row total">
-        <span className="nm">Разом</span>
-        <span className="amt">{money(receipt.totalCents)}</span>
+        <hr className="r-div" />
+        {itemsMeta.map((it) => (
+          <div className={`r-item${editable && it.confidence < 0.8 ? " low" : ""}`} key={it.id}>
+            <div className="r-row">
+              <span className="r-name">{it.name}</span>
+              <span className="r-dots" />
+              <span className="r-amt">{money(it.unitPriceCents * it.qty)}</span>
+            </div>
+            {it.qty > 1 && (
+              <div className="r-qty">
+                {it.qty} × {money(it.unitPriceCents)}
+              </div>
+            )}
+          </div>
+        ))}
+        <hr className="r-div" />
+        <div className="r-row">
+          <span className="r-name">Сервіс {svcPercent}%</span>
+          <span className="r-dots" />
+          <span className="r-amt">{money(receipt.serviceChargeCents)}</span>
+        </div>
+        <hr className="r-div" />
+        <div className="r-total">
+          <span>РАЗОМ</span>
+          <span>{money(receipt.totalCents)}</span>
+        </div>
+        <div className="r-barcode" />
+        <div className="r-foot">#0042 · каса 1 · {itemsMeta.length} поз.</div>
       </div>
     </div>
   );
@@ -632,6 +685,23 @@ function MicIcon() {
       <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
       <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
       <path d="M12 18v4" />
+    </svg>
+  );
+}
+
+function CameraIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 8h3l1.4-2h7.2L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" />
+      <circle cx="12" cy="13" r="3.2" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 13l4 4L19 7" />
     </svg>
   );
 }
