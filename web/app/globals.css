@@ -41,8 +41,10 @@ body {
 /* ---------- stage + app card ---------- */
 .stage {
   min-height: 100dvh;
-  display: grid;
-  place-items: safe center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: safe center;
   padding: clamp(16px, 4vw, 56px) 16px;
   padding-top: calc(clamp(16px, 4vw, 56px) + env(safe-area-inset-top, 0px));
   padding-bottom: calc(clamp(16px, 4vw, 56px) + env(safe-area-inset-bottom, 0px));
@@ -52,6 +54,7 @@ body {
 }
 .app {
   width: 100%;
+  min-width: 0;
   max-width: 460px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -229,10 +232,15 @@ body {
 /* result: список "хто скільки платить" */
 .result-list { display: flex; flex-direction: column; gap: 10px; margin-top: 2px; }
 .pay-row {
-  display: flex; align-items: center; gap: 12px;
   background: var(--surface-2); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 13px 14px;
+  border-radius: var(--radius); overflow: hidden;
 }
+.pay-head {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  background: none; border: 0; color: inherit; text-align: left; font: inherit;
+  padding: 13px 14px; cursor: pointer;
+}
+.pay-head:hover { background: color-mix(in srgb, var(--surface-2) 92%, var(--accent) 8%); }
 .pay-row .ava { margin: 0; flex: 0 0 auto; }
 .pay-info { flex: 1 1 auto; min-width: 0; }
 .pay-name { font-size: 15px; font-weight: 700; overflow-wrap: anywhere; word-break: break-word; }
@@ -244,6 +252,37 @@ body {
   font-family: var(--font-mono), monospace; font-size: 18px; font-weight: 700;
   font-variant-numeric: tabular-nums; flex: 0 0 auto;
 }
+.caret {
+  flex: 0 0 auto; width: 18px; height: 18px; color: var(--muted);
+  display: flex; transition: transform 0.2s ease;
+}
+.caret svg { width: 18px; height: 18px; }
+.caret.open { transform: rotate(180deg); }
+.pay-detail {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 10px 14px 12px 62px; border-top: 1px solid var(--border);
+}
+.pay-detail-row { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
+.pay-detail-row > span:last-child {
+  font-family: var(--font-mono), monospace; font-variant-numeric: tabular-nums; flex: 0 0 auto;
+}
+.pay-detail-row.muted { color: var(--muted); }
+.pay-detail-row.total { border-top: 1px dashed var(--border); padding-top: 6px; font-weight: 700; }
+.grand {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 12px; padding: 12px 15px; border-radius: var(--radius);
+  background: var(--accent-soft); font-weight: 700;
+}
+.grand-sum {
+  font-family: var(--font-mono), monospace; font-size: 20px;
+  font-variant-numeric: tabular-nums; color: var(--accent-ink);
+}
+.heard {
+  margin: 12px 0 2px; padding: 9px 12px; border-radius: 12px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  font-size: 13px; color: var(--text); overflow-wrap: anywhere;
+}
+.heard-label { color: var(--muted); font-weight: 600; margin-right: 4px; }
 
 /* people / result (legacy) */
 .people { display: flex; gap: 10px; margin-top: 6px; }

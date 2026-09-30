@@ -54,6 +54,49 @@ function mergeAssignments(prev: UnitAssignment[], next: UnitAssignment[]): UnitA
   return [...map.values()];
 }
 
+/** Той самий стабільний порядок людей, що й у lib/split.ts (для розкладки копійок). */
+function stableIndex(people: Person[]): Map<string, number> {
+  const ordered = [...people].sort(
+    (a, b) => a.name.localeCompare(b.name, "uk") || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+  );
+  return new Map(ordered.map((p, i) => [p.id, i]));
+}
+
+/**
+ * Детальний розклад: за які позиції й скільки саме платить людина (частка страви
+ * в копійках). Повторює порозрядну логіку computeSplit (base + залишок за
+ * стабільним порядком), тож суми збігаються з підсумком людини.
+ */
+function itemsDetailForPerson(
+  personId: string,
+  receipt: Receipt,
+  assignments: UnitAssignment[],
+  people: Person[]
+): { name: string; cents: number; shared: boolean }[] {
+  const orderIndex = stableIndex(people);
+  const known = new Set(people.map((p) => p.id));
+  const byUnit = new Map(assignments.map((a) => [`${a.itemId}#${a.unitIndex}`, a.personIds]));
+  const acc = new Map<string, { cents: number; shared: boolean }>();
+  for (const it of receipt.items) {
+    const qty = Math.max(0, Math.floor(it.qty));
+    for (let u = 0; u < qty; u++) {
+      const raw = byUnit.get(`${it.id}#${u}`) ?? [];
+      const ppl = [...new Set(raw)]
+        .filter((id) => known.has(id))
+        .sort((x, y) => (orderIndex.get(x) ?? 1e9) - (orderIndex.get(y) ?? 1e9));
+      if (ppl.length === 0 || !ppl.includes(personId)) continue;
+      const base = Math.floor(it.unitPriceCents / ppl.length);
+      const rem = it.unitPriceCents - base * ppl.length;
+      const share = base + (ppl.indexOf(personId) < rem ? 1 : 0);
+      const cur = acc.get(it.name) ?? { cents: 0, shared: false };
+      cur.cents += share;
+      if (ppl.length > 1) cur.shared = true;
+      acc.set(it.name, cur);
+    }
+  }
+  return [...acc.entries()].map(([name, v]) => ({ name, cents: v.cents, shared: v.shared }));
+}
+
 /** Короткий перелік позицій, за які платить людина (для екрана результату). */
 function itemsForPerson(personId: string, receipt: Receipt, assignments: UnitAssignment[]): string {
   const byUnit = new Map(assignments.map((a) => [`${a.itemId}#${a.unitIndex}`, a.personIds]));
@@ -224,6 +267,7 @@ export default function AppFlow() {
     dictationRef.current = null;
     const text = rawTranscript.trim();
     if (!text) return;
+    setTranscript(text);
     const gen = ++genRef.current;
     setParsing(true);
     try {
@@ -254,8 +298,9 @@ export default function AppFlow() {
     }
     errRef.current = false;
     setNotice(null);
+    setTranscript("");
     const handle = startDictation(
-      () => {},
+      (text) => setTranscript(text),
       (finalText) => void finishCorrection(finalText),
       (reason) => {
         errRef.current = true;
@@ -350,6 +395,7 @@ export default function AppFlow() {
                 assignments={assignments}
                 dictMode={dictMode}
                 parsing={parsing}
+                transcript={transcript}
                 onCorrect={correct}
                 onReset={reset}
               />
@@ -595,6 +641,7 @@ function Result({
   assignments,
   dictMode,
   parsing,
+  transcript,
   onCorrect,
   onReset,
 }: {
@@ -604,10 +651,18 @@ function Result({
   assignments: UnitAssignment[];
   dictMode: DictMode;
   parsing: boolean;
+  transcript: string;
   onCorrect: () => void;
   onReset: () => void;
 }) {
   const correcting = dictMode === "correct";
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const toggle = (id: string) =>
+    setOpen((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
   return (
     <>
       <p className="screen-lead">Кожен платить:</p>
@@ -616,6 +671,8 @@ function Result({
           const p = people.find((x) => x.id === r.personId);
           const name = p?.name ?? r.personId;
           const items = itemsForPerson(r.personId, receipt, assignments);
+          const detail = itemsDetailForPerson(r.personId, receipt, assignments, people);
+          const isOpen = open.has(r.personId);
           return (
             <motion.div
               key={r.personId}
@@ -625,17 +682,55 @@ function Result({
               animate={{ opacity: 1, y: 0 }}
               transition={{ type: "spring", stiffness: 300, damping: 24 }}
             >
-              <div className="ava" style={{ background: colorFor(r.personId, people) }}>
-                {name[0]?.toUpperCase()}
-              </div>
-              <div className="pay-info">
-                <div className="pay-name">{name}</div>
-                <div className="pay-items">{items || "-"}</div>
-              </div>
-              <div className="pay-sum">{money(r.totalCents)}</div>
+              <button
+                type="button"
+                className="pay-head"
+                onClick={() => toggle(r.personId)}
+                aria-expanded={isOpen}
+              >
+                <div className="ava" style={{ background: colorFor(r.personId, people) }}>
+                  {name[0]?.toUpperCase()}
+                </div>
+                <div className="pay-info">
+                  <div className="pay-name">{name}</div>
+                  <div className="pay-items">{items || "-"}</div>
+                </div>
+                <div className="pay-sum">{money(r.totalCents)}</div>
+                <span className={`caret${isOpen ? " open" : ""}`} aria-hidden="true">
+                  <ChevronIcon />
+                </span>
+              </button>
+              {isOpen && (
+                <div className="pay-detail">
+                  {detail.map((d) => (
+                    <div className="pay-detail-row" key={d.name}>
+                      <span>
+                        {d.name}
+                        {d.shared ? " (спільна)" : ""}
+                      </span>
+                      <span>{money(d.cents)}</span>
+                    </div>
+                  ))}
+                  {r.serviceCents > 0 && (
+                    <div className="pay-detail-row muted">
+                      <span>Сервісний збір</span>
+                      <span>{money(r.serviceCents)}</span>
+                    </div>
+                  )}
+                  <div className="pay-detail-row total">
+                    <span>Разом</span>
+                    <span>{money(r.totalCents)}</span>
+                  </div>
+                </div>
+              )}
             </motion.div>
           );
         })}
+      </div>
+
+      <div className="grand">
+        <span>Разом за чеком</span>
+        <span className="grand-sum">{money(result.sumCents)}</span>
       </div>
 
       {result.ok && !result.totalMismatch && (
@@ -660,6 +755,11 @@ function Result({
         </div>
       )}
 
+      {transcript && (
+        <div className="heard">
+          <span className="heard-label">Почуто:</span> {transcript}
+        </div>
+      )}
       <div className="mic-wrap sm">
         <motion.button
           className={`mic sm${correcting ? " on" : ""}`}
@@ -698,6 +798,14 @@ function MicIcon() {
       <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
       <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
       <path d="M12 18v4" />
+    </svg>
+  );
+}
+
+function ChevronIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 9l6 6 6-6" />
     </svg>
   );
 }
