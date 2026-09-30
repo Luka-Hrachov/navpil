@@ -1,5 +1,5 @@
 // Детермінований рушій підрахунку. Усе в копійках (цілі числа), без float-похибок.
-// Модель сюди НЕ втручається — вона лише дає структуру; суми рахує цей код.
+// Модель сюди НЕ втручається - вона лише дає структуру; суми рахує цей код.
 
 export type Cents = number; // завжди ціле
 
@@ -43,7 +43,7 @@ export interface SplitResult {
   expectedCents: Cents; // позиції + сервіс
 }
 
-/** Стабільний порядок людей: за іменем (укр), при рівності — за id. */
+/** Стабільний порядок людей: за іменем (укр), при рівності - за id. */
 function stableOrder(people: Person[]): Person[] {
   return [...people].sort(
     (a, b) => a.name.localeCompare(b.name, "uk") || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
@@ -65,7 +65,7 @@ export function computeSplit(
   const byUnit = new Map<string, string[]>();
   for (const a of assignments) byUnit.set(unitKey(a.itemId, a.unitIndex), a.personIds);
 
-  // 1) Розкидати кожну одиницю по її людях; залишок від ділення — за стабільним порядком.
+  // 1) Розкидати кожну одиницю по її людях; залишок від ділення - за стабільним порядком.
   let itemsCents = 0;
   for (const it of receipt.items) {
     for (let u = 0; u < it.qty; u++) {
@@ -91,7 +91,7 @@ export function computeSplit(
     }
   }
 
-  // 2) Сервісний збір пропорційно до підсумку; залишок — тим, у кого найбільша дробова частина.
+  // 2) Сервісний збір пропорційно до підсумку; залишок - тим, у кого найбільша дробова частина.
   const sumSub = [...subtotal.values()].reduce((a, b) => a + b, 0);
   const service = new Map<string, Cents>(people.map((p) => [p.id, 0]));
   const svc = receipt.serviceChargeCents;
@@ -126,16 +126,16 @@ export function computeSplit(
   const sumCents = perPerson.reduce((a, b) => a + b.totalCents, 0);
   const expectedCents = itemsCents + svc;
   if (sumCents !== expectedCents) {
-    issues.push(`Сума часток (${sumCents}) ≠ позиції+сервіс (${expectedCents})`);
+    issues.push(`Сума часток (${sumCents}) != позиції+сервіс (${expectedCents})`);
   }
   if (receipt.totalCents !== expectedCents) {
-    issues.push(`Підсумок чека (${receipt.totalCents}) ≠ позиції+сервіс (${expectedCents})`);
+    issues.push(`Підсумок чека (${receipt.totalCents}) != позиції+сервіс (${expectedCents})`);
   }
 
   return { perPerson, ok: issues.length === 0, issues, sumCents, expectedCents };
 }
 
-/** Копійки → рядок «123,45». */
+/** Копійки -> рядок '123,45'. */
 export function money(cents: Cents): string {
   const sign = cents < 0 ? "-" : "";
   const abs = Math.abs(cents);

@@ -1,7 +1,7 @@
-// POST /api/parse — розбір голосового транскрипту в призначення одиниць товару.
+// POST /api/parse - розбір голосового транскрипту в призначення одиниць товару.
 // Без GEMINI_API_KEY повертає мок, що збігається з поточним сценарієм
 // застосунку (app/app-flow.tsx: MOCK_TRANSCRIPT + BASE_ASSIGN + Clarify-екран
-// про другу каву). З ключем — реально виконає gemini.parseIntent (мережевий
+// про другу каву). З ключем - реально виконає gemini.parseIntent (мережевий
 // виклик відбудеться лише коли цей route-хендлер реально обробить HTTP-запит,
 // не під час написання/типчеку коду).
 
@@ -16,11 +16,11 @@ function buildMockResponse(people: ParseRequest["people"]): ParseResponse {
       { itemId: "borsch", unitIndex: 1, personIds: ["me"] },
       { itemId: "coffee", unitIndex: 0, personIds: ["me"] },
       { itemId: "pizza", unitIndex: 0, personIds: ["me", "anya", "sam"] },
-      // coffee unitIndex 1 навмисно лишається непризначеною — уточнюємо нижче.
+      // coffee unitIndex 1 навмисно лишається непризначеною - уточнюємо нижче.
     ],
     clarifications: [
       {
-        question: "Дві кави — хто брав другу?",
+        question: "Дві кави - хто брав другу?",
         target: { itemId: "coffee", unitIndex: 1 },
         options: ["me", "anya", "sam"],
       },
@@ -47,7 +47,7 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  // Немає ключа — мок. Це основний робочий режим цього агента: жодного
+  // Немає ключа - мок. Це основний робочий режим цього агента: жодного
   // реального виклику Gemini тут не станеться.
   if (!process.env.GEMINI_API_KEY) {
     return Response.json(buildMockResponse(body?.people ?? []));

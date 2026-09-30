@@ -1,7 +1,7 @@
-// POST /api/recognize — розпізнавання фото чека.
+// POST /api/recognize - розпізнавання фото чека.
 // Без GEMINI_API_KEY повертає мок, що структурно й за значеннями збігається
 // з поточними мок-даними застосунку (app/app-flow.tsx: SAMPLE).
-// З ключем — реально виконає gemini.recognizeReceipt (мережевий виклик
+// З ключем - реально виконає gemini.recognizeReceipt (мережевий виклик
 // відбудеться лише коли цей route-хендлер реально обробить HTTP-запит,
 // не під час написання/типчеку коду).
 
@@ -37,7 +37,7 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  // Немає ключа — мок. Це основний робочий режим цього агента: жодного
+  // Немає ключа - мок. Це основний робочий режим цього агента: жодного
   // реального виклику Gemini тут не станеться.
   if (!process.env.GEMINI_API_KEY) {
     return Response.json(MOCK_RESPONSE);

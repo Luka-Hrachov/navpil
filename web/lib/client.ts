@@ -1,6 +1,6 @@
 // Клієнтські хелпери: виклики бекенд-API ("@/app/api/*", їх реалізує інший агент
-// за контрактом — див. "@/lib/api-types") + реальний голосовий ввід через Web Speech API.
-// Тут НЕ робиться жодних прямих викликів моделі — тільки fetch на власні /api/* маршрути.
+// за контрактом - див. "@/lib/api-types") + реальний голосовий ввід через Web Speech API.
+// Тут НЕ робиться жодних прямих викликів моделі - тільки fetch на власні /api/* маршрути.
 
 import type {
   ParseRequest,
@@ -10,7 +10,7 @@ import type {
 } from "@/lib/api-types";
 import type { Person, Receipt } from "@/lib/split";
 
-/* --------------------------------- фото → base64 --------------------------------- */
+/* --------------------------------- фото -> base64 --------------------------------- */
 
 /** Читає файл через FileReader і повертає base64 БЕЗ префікса "data:...;base64,". */
 export function fileToBase64(file: File): Promise<{ imageBase64: string; mimeType: string }> {
@@ -50,20 +50,20 @@ async function postJson<TResponse>(url: string, body: unknown): Promise<TRespons
       const j = (await res.json()) as { error?: string };
       detail = j?.error ? `: ${j.error}` : "";
     } catch {
-      // ignore — тіло могло бути не-JSON
+      // ignore - тіло могло бути не-JSON
     }
     throw new Error(`Запит ${url} не вдався (${res.status})${detail}`);
   }
   return (await res.json()) as TResponse;
 }
 
-/** POST /api/recognize — розпізнати чек із фото. */
+/** POST /api/recognize - розпізнати чек із фото. */
 export function callRecognize(imageBase64: string, mimeType: string): Promise<RecognizeResponse> {
   const body: RecognizeRequest = { imageBase64, mimeType };
   return postJson<RecognizeResponse>("/api/recognize", body);
 }
 
-/** POST /api/parse — розібрати голосовий транскрипт у призначення одиниць. */
+/** POST /api/parse - розібрати голосовий транскрипт у призначення одиниць. */
 export function callParse(
   transcript: string,
   receipt: Receipt,
@@ -76,7 +76,7 @@ export function callParse(
 /* --------------------------------- голосовий ввід (Web Speech API) --------------------------------- */
 
 /**
- * Мінімальні декларації Web Speech API — офіційних типів у lib.dom.d.ts немає,
+ * Мінімальні декларації Web Speech API - офіційних типів у lib.dom.d.ts немає,
  * а глобальний .d.ts тут навмисно не створюємо (щоб не конфліктувати з іншим агентом).
  */
 interface SpeechRecognitionResultLike {
@@ -129,10 +129,10 @@ export interface DictationHandle {
 /**
  * Запускає розпізнавання мовлення (uk-UA, interim results).
  * - onResult(text, isFinal) викликається на кожен проміжний і фінальний фрагмент.
- * - onEnd(finalText) — коли розпізнавання завершилось (природно або через stop()).
- * - onError(reason) — помилка розпізнавання (наприклад, "not-allowed", "no-speech").
+ * - onEnd(finalText) - коли розпізнавання завершилось (природно або через stop()).
+ * - onError(reason) - помилка розпізнавання (наприклад, "not-allowed", "no-speech").
  *
- * Повертає null, якщо Web Speech API недоступний у цьому браузері — UI має
+ * Повертає null, якщо Web Speech API недоступний у цьому браузері - UI має
  * впасти на запасний мок-транскрипт замість реального голосу.
  */
 export function startDictation(
@@ -174,7 +174,7 @@ export function startDictation(
   };
 
   recognition.onerror = (event) => {
-    // "no-speech" / "aborted" при ручній зупинці — не показуємо як помилку користувачу тут,
+    // "no-speech" / "aborted" при ручній зупинці - не показуємо як помилку користувачу тут,
     // рішення про UI-реакцію лишаємо викликаючому коду через onError.
     if (stoppedManually && (event.error === "aborted" || event.error === "no-speech")) return;
     onError(event.error || "unknown");

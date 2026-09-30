@@ -9,8 +9,8 @@ const mono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Навпіл — рахунок голосом",
-  description: "Сфотографуй чек, скажи хто що брав — і кожен знає свою частку.",
+  title: "Навпіл - рахунок голосом",
+  description: "Сфотографуй чек, скажи хто що брав - і кожен знає свою частку.",
 };
 
 export default function RootLayout({

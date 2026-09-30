@@ -18,53 +18,21 @@ import {
 } from "@/lib/client";
 import type { Clarification, ItemMeta } from "@/lib/api-types";
 
-/* ------------------- дефолти й запасні (fallback) дані ------------------- */
-/* Використовуються, поки не прийшла відповідь бекенда, або якщо виклик
-   API/голосу недоступний — застосунок і без ключа має лишатись робочим. */
+/* --------------------------------- дані --------------------------------- */
 
-const PEOPLE: Person[] = [
-  { id: "me", name: "Я" },
-  { id: "anya", name: "Аня" },
-  { id: "sam", name: "Сем" },
-];
-const COLORS: Record<string, string> = { me: "var(--p1)", anya: "var(--p2)", sam: "var(--p3)" };
+// Людина, яка користується застосунком. Усі інші люди беруться ТІЛЬКИ з голосу.
+const ME: Person = { id: "me", name: "Я" };
+const EMPTY_RECEIPT: Receipt = { items: [], serviceChargeCents: 0, totalCents: 0 };
+const PALETTE = ["var(--p1)", "var(--p2)", "var(--p3)", "var(--accent-2)"];
 
-function colorFor(id: string): string {
-  return COLORS[id] ?? "var(--accent)";
+// Стабільний колір людини: "Я" завжди перший, решта - за порядком появи.
+function colorFor(id: string, people: Person[]): string {
+  if (id === "me") return PALETTE[0];
+  const others = people.filter((p) => p.id !== "me");
+  const i = others.findIndex((p) => p.id === id);
+  if (i < 0) return "var(--accent)";
+  return PALETTE[(i % (PALETTE.length - 1)) + 1];
 }
-
-const SAMPLE: Receipt & { itemsMeta: ItemMeta[] } = {
-  items: [
-    { id: "borsch", name: "Борщ", qty: 2, unitPriceCents: 12000 },
-    { id: "coffee", name: "Кава", qty: 2, unitPriceCents: 6500 },
-    { id: "pizza", name: "Піца", qty: 1, unitPriceCents: 32000 },
-  ],
-  serviceChargeCents: 6900,
-  totalCents: 75900,
-  itemsMeta: [
-    { id: "borsch", name: "Борщ", qty: 2, unitPriceCents: 12000, confidence: 0.98 },
-    { id: "coffee", name: "Кава", qty: 2, unitPriceCents: 6500, confidence: 0.71 },
-    { id: "pizza", name: "Піца", qty: 1, unitPriceCents: 32000, confidence: 0.95 },
-  ],
-};
-
-const MOCK_TRANSCRIPT = "Борщ обидва мої, одну каву я, піцу ділимо втрьох.";
-
-// запасні призначення, якщо /api/parse взагалі недоступний (мережева помилка)
-const BASE_ASSIGN: UnitAssignment[] = [
-  { itemId: "borsch", unitIndex: 0, personIds: ["me"] },
-  { itemId: "borsch", unitIndex: 1, personIds: ["me"] },
-  { itemId: "coffee", unitIndex: 0, personIds: ["me"] },
-  { itemId: "pizza", unitIndex: 0, personIds: ["me", "anya", "sam"] },
-];
-
-const FALLBACK_CLARIFICATIONS: Clarification[] = [
-  {
-    question: "Дві кави — хто брав другу?",
-    target: { itemId: "coffee", unitIndex: 1 },
-    options: PEOPLE.map((p) => p.id),
-  },
-];
 
 type Screen = "upload" | "recognizing" | "confirm" | "listen" | "clarify" | "result";
 type DictMode = "idle" | "listen" | "correct";
@@ -75,19 +43,21 @@ const fade = {
   exit: { opacity: 0, y: -10, transition: { duration: 0.25 } },
 };
 
+/** Мерджить нові UnitAssignment поверх старих за ключем (itemId, unitIndex). */
+function mergeAssignments(prev: UnitAssignment[], next: UnitAssignment[]): UnitAssignment[] {
+  const key = (a: UnitAssignment) => `${a.itemId}#${a.unitIndex}`;
+  const map = new Map<string, UnitAssignment>(prev.map((a) => [key(a), a]));
+  for (const a of next) map.set(key(a), a);
+  return [...map.values()];
+}
+
 /* --------------------------------- застосунок --------------------------------- */
 
 export default function AppFlow() {
-  const devScreen =
-    typeof window !== "undefined"
-      ? (new URLSearchParams(window.location.search).get("screen") as Screen | null)
-      : null;
-  const [screen, setScreen] = useState<Screen>(
-    devScreen && devScreen !== "upload" ? devScreen : "upload"
-  );
-  const [people, setPeople] = useState<Person[]>(PEOPLE);
-  const [receipt, setReceipt] = useState<Receipt>(SAMPLE);
-  const [itemsMeta, setItemsMeta] = useState<ItemMeta[]>(SAMPLE.itemsMeta);
+  const [screen, setScreen] = useState<Screen>("upload");
+  const [people, setPeople] = useState<Person[]>([ME]);
+  const [receipt, setReceipt] = useState<Receipt>(EMPTY_RECEIPT);
+  const [itemsMeta, setItemsMeta] = useState<ItemMeta[]>([]);
   const [source, setSource] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -96,16 +66,8 @@ export default function AppFlow() {
   const [parsing, setParsing] = useState(false);
   const dictationRef = useRef<DictationHandle | null>(null);
 
-  const [assignments, setAssignments] = useState<UnitAssignment[]>(
-    devScreen === "result"
-      ? [...BASE_ASSIGN, { itemId: "coffee", unitIndex: 1, personIds: ["anya"] }]
-      : devScreen === "clarify"
-        ? BASE_ASSIGN
-        : []
-  );
-  const [clarifications, setClarifications] = useState<Clarification[]>(
-    devScreen === "clarify" ? FALLBACK_CLARIFICATIONS : []
-  );
+  const [assignments, setAssignments] = useState<UnitAssignment[]>([]);
+  const [clarifications, setClarifications] = useState<Clarification[]>([]);
   const [clarifyIndex, setClarifyIndex] = useState(0);
 
   const result = useMemo(
@@ -113,44 +75,32 @@ export default function AppFlow() {
     [receipt, people, assignments]
   );
 
-  // якщо чекаємо уточнення, якого раптом нема (порожній масив/вихід за межі) — не зависати
+  // якщо чекаємо уточнення, якого раптом нема - не зависати
   useEffect(() => {
-    if (screen === "clarify" && !clarifications[clarifyIndex]) {
-      setScreen("result");
-    }
+    if (screen === "clarify" && !clarifications[clarifyIndex]) setScreen("result");
   }, [screen, clarifications, clarifyIndex]);
 
-  // не лишати активне розпізнавання мовлення, якщо компонент розмонтовується
-  useEffect(() => {
-    return () => {
-      dictationRef.current?.stop();
-    };
-  }, []);
-
-
+  // зупинити активне розпізнавання мовлення при розмонтуванні
+  useEffect(() => () => dictationRef.current?.stop(), []);
 
   async function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    e.target.value = ""; // дозволити повторний вибір того ж файлу
+    e.target.value = "";
     if (!file) return;
     setNotice(null);
     setScreen("recognizing");
     try {
       const { imageBase64, mimeType } = await fileToBase64(file);
       const res = await callRecognize(imageBase64, mimeType);
+      if (!res.receipt.items.length) throw new Error("Не вдалося прочитати позиції чека");
       setReceipt(res.receipt);
       setItemsMeta(res.itemsMeta);
       setSource(res.source);
       if (res.error) setNotice(res.error);
       setScreen("confirm");
     } catch (err) {
-      setNotice(
-        err instanceof Error ? err.message : "Не вдалося розпізнати чек — показано приклад"
-      );
-      setReceipt(SAMPLE);
-      setItemsMeta(SAMPLE.itemsMeta);
-      setSource("mock");
-      setScreen("confirm");
+      setNotice(err instanceof Error ? err.message : "Не вдалося розпізнати чек. Спробуй інше фото");
+      setScreen("upload");
     }
   }
 
@@ -162,8 +112,12 @@ export default function AppFlow() {
   async function finishListening(rawTranscript: string) {
     setDictMode("idle");
     dictationRef.current = null;
-    const text = rawTranscript.trim() || MOCK_TRANSCRIPT;
+    const text = rawTranscript.trim();
     setTranscript(text);
+    if (!text) {
+      setNotice("Не почув. Натисни і скажи ще раз");
+      return;
+    }
     setParsing(true);
     try {
       const res = await callParse(text, receipt, people);
@@ -175,13 +129,7 @@ export default function AppFlow() {
       if (res.error) setNotice(res.error);
       setScreen(res.clarifications.length > 0 ? "clarify" : "result");
     } catch (err) {
-      setNotice(
-        err instanceof Error ? err.message : "Не вдалося розібрати голос — показано приклад"
-      );
-      setAssignments(BASE_ASSIGN);
-      setClarifications(FALLBACK_CLARIFICATIONS);
-      setClarifyIndex(0);
-      setScreen("clarify");
+      setNotice(err instanceof Error ? err.message : "Не вдалося розібрати голос. Спробуй ще раз");
     } finally {
       setParsing(false);
     }
@@ -200,16 +148,15 @@ export default function AppFlow() {
       (reason) => {
         setDictMode("idle");
         dictationRef.current = null;
-        setNotice(`Голосовий ввід не спрацював (${reason}) — спробуй ще раз`);
+        setNotice(
+          reason === "unsupported"
+            ? "Голосовий ввід працює у Chrome. Відкрий застосунок у Chrome"
+            : `Голосовий ввід не спрацював (${reason}). Спробуй ще раз`
+        );
       }
     );
     if (!handle) {
-      // Web Speech API недоступний у цьому браузері — падаємо на запасний мок-транскрипт,
-      // але все одно проганяємо його через реальний /api/parse
-      setDictMode("listen");
-      window.setTimeout(() => {
-        void finishListening(MOCK_TRANSCRIPT);
-      }, 1200);
+      setNotice("Голосовий ввід працює у Chrome. Відкрий застосунок у Chrome");
       return;
     }
     dictationRef.current = handle;
@@ -220,8 +167,7 @@ export default function AppFlow() {
     const byId = people.find((p) => p.id === option);
     if (byId) return byId.id;
     const byName = people.find((p) => p.name.toLowerCase() === option.toLowerCase());
-    if (byName) return byName.id;
-    return option;
+    return byName ? byName.id : option;
   }
 
   function answerClarify(option: string) {
@@ -236,11 +182,8 @@ export default function AppFlow() {
       ]);
     }
     const next = clarifyIndex + 1;
-    if (next < clarifications.length) {
-      setClarifyIndex(next);
-    } else {
-      setScreen("result");
-    }
+    if (next < clarifications.length) setClarifyIndex(next);
+    else setScreen("result");
   }
 
   async function finishCorrection(rawTranscript: string) {
@@ -281,18 +224,15 @@ export default function AppFlow() {
       (reason) => {
         setDictMode("idle");
         dictationRef.current = null;
-        setNotice(`Голосовий ввід не спрацював (${reason})`);
+        setNotice(
+          reason === "unsupported"
+            ? "Голосовий ввід працює у Chrome"
+            : `Голосовий ввід не спрацював (${reason})`
+        );
       }
     );
     if (!handle) {
-      // демо-фолбек без Web Speech API: «другу каву брав Сем», якщо така позиція/особа є
-      setAssignments((a) => {
-        const sam = people.find((p) => p.id === "sam");
-        const hasSecondCoffee = itemsMeta.some((it) => it.id === "coffee" && it.qty > 1);
-        if (!sam || !hasSecondCoffee) return a;
-        const rest = a.filter((x) => !(x.itemId === "coffee" && x.unitIndex === 1));
-        return [...rest, { itemId: "coffee", unitIndex: 1, personIds: [sam.id] }];
-      });
+      setNotice("Голосовий ввід працює у Chrome");
       return;
     }
     dictationRef.current = handle;
@@ -311,9 +251,9 @@ export default function AppFlow() {
     setClarifyIndex(0);
     setNotice(null);
     setSource(null);
-    setReceipt(SAMPLE);
-    setItemsMeta(SAMPLE.itemsMeta);
-    setPeople(PEOPLE);
+    setReceipt(EMPTY_RECEIPT);
+    setItemsMeta([]);
+    setPeople([ME]);
   }
 
   return (
@@ -380,14 +320,6 @@ export default function AppFlow() {
   );
 }
 
-/** Мерджить нові UnitAssignment поверх старих за ключем (itemId, unitIndex). */
-function mergeAssignments(prev: UnitAssignment[], next: UnitAssignment[]): UnitAssignment[] {
-  const key = (a: UnitAssignment) => `${a.itemId}#${a.unitIndex}`;
-  const map = new Map<string, UnitAssignment>(prev.map((a) => [key(a), a]));
-  for (const a of next) map.set(key(a), a);
-  return [...map.values()];
-}
-
 /* --------------------------------- екрани --------------------------------- */
 
 function Header({ source }: { source: string | null }) {
@@ -401,7 +333,7 @@ function Header({ source }: { source: string | null }) {
       {source === "mock" && (
         <span className="chip">
           <span className="dot" />
-          мок
+          демо-режим
         </span>
       )}
     </div>
@@ -413,10 +345,8 @@ function Upload({ onPick }: { onPick: (e: ChangeEvent<HTMLInputElement>) => void
     <div className="hero">
       <div className="hero-mark">Н</div>
       <h1>Навпіл</h1>
-      <p className="tag">Сфотографуй чек, скажи хто що брав — і кожен бачить свою частку.</p>
-      <div className="hero-receipt" aria-hidden>
-        <ReceiptRows receipt={SAMPLE} itemsMeta={SAMPLE.itemsMeta} />
-      </div>
+      <p className="tag">Сфотографуй чек, скажи хто що брав - і кожен бачить свою частку.</p>
+      <ReceiptArt />
       <div className="steps">
         <div className="step">
           <div className="si">
@@ -453,7 +383,7 @@ function Recognizing() {
   return (
     <div className="center-block">
       <div className="spinner" />
-      <p className="mic-cap">Читаю чек…</p>
+      <p className="mic-cap">Читаю чек...</p>
     </div>
   );
 }
@@ -474,7 +404,7 @@ function ReceiptRows({
       <div className="receipt">
         <div className="r-head">
           <div className="r-title">Ч Е К</div>
-          <div className="r-sub">НАВПІЛ · дякуємо за візит</div>
+          <div className="r-sub">розпізнано</div>
         </div>
         <hr className="r-div" />
         {itemsMeta.map((it) => (
@@ -486,24 +416,28 @@ function ReceiptRows({
             </div>
             {it.qty > 1 && (
               <div className="r-qty">
-                {it.qty} × {money(it.unitPriceCents)}
+                {it.qty} x {money(it.unitPriceCents)}
               </div>
             )}
           </div>
         ))}
-        <hr className="r-div" />
-        <div className="r-row">
-          <span className="r-name">Сервіс {svcPercent}%</span>
-          <span className="r-dots" />
-          <span className="r-amt">{money(receipt.serviceChargeCents)}</span>
-        </div>
+        {receipt.serviceChargeCents > 0 && (
+          <>
+            <hr className="r-div" />
+            <div className="r-row">
+              <span className="r-name">Сервіс {svcPercent}%</span>
+              <span className="r-dots" />
+              <span className="r-amt">{money(receipt.serviceChargeCents)}</span>
+            </div>
+          </>
+        )}
         <hr className="r-div" />
         <div className="r-total">
           <span>РАЗОМ</span>
           <span>{money(receipt.totalCents)}</span>
         </div>
         <div className="r-barcode" />
-        <div className="r-foot">#0042 · каса 1 · {itemsMeta.length} поз.</div>
+        <div className="r-foot">{itemsMeta.length} поз.</div>
       </div>
     </div>
   );
@@ -518,16 +452,18 @@ function Confirm({
   itemsMeta: ItemMeta[];
   onOk: () => void;
 }) {
+  const hasLow = itemsMeta.some((it) => it.confidence < 0.8);
   return (
     <>
-      <p className="screen-lead">Перевір, чи все правильно. Підсвічене — сумнівне.</p>
+      <p className="screen-lead">
+        Перевір, чи все правильно.{hasLow ? " Підсвічене - сумнівне." : ""}
+      </p>
       <ReceiptRows receipt={receipt} itemsMeta={itemsMeta} editable />
       <div className="actions">
         <button className="btn-primary" onClick={onOk}>
           Все вірно
         </button>
       </div>
-      <p className="mic-cap center">Виправити — тапни позицію або скажи голосом</p>
     </>
   );
 }
@@ -548,21 +484,25 @@ function Listen({
   onRecord: () => void;
 }) {
   const listening = dictMode === "listen";
-  const caption = parsing ? "Обробляю…" : listening ? "Слухаю…" : "Натисни і скажи, хто що брав";
+  const caption = parsing
+    ? "Обробляю..."
+    : listening
+      ? "Слухаю... натисни, щоб завершити"
+      : "Натисни і скажи, хто що брав";
   return (
     <>
       <ReceiptRows receipt={receipt} itemsMeta={itemsMeta} />
       <div className="mic-wrap">
         <motion.button
           className={`mic${listening ? " on" : ""}`}
-          aria-label="Говорити"
+          aria-label={listening ? "Завершити" : "Говорити"}
           onClick={onRecord}
           disabled={parsing}
           whileHover={{ scale: 1.06 }}
           whileTap={{ scale: 0.94 }}
           transition={{ type: "spring", stiffness: 400, damping: 15 }}
         >
-          <MicIcon />
+          {listening ? <StopIcon /> : <MicIcon />}
         </motion.button>
         <span className="mic-cap">{caption}</span>
       </div>
@@ -591,7 +531,7 @@ function Clarify({
             people.find((p) => p.id === opt) ??
             people.find((p) => p.name.toLowerCase() === opt.toLowerCase());
           const label = person?.name ?? opt;
-          const color = person ? colorFor(person.id) : "var(--accent)";
+          const color = person ? colorFor(person.id, people) : "var(--accent)";
           return (
             <button key={opt} className="chip-btn" onClick={() => onAnswer(opt)}>
               <span className="ava sm" style={{ background: color }}>
@@ -602,7 +542,7 @@ function Clarify({
           );
         })}
       </div>
-      <p className="mic-cap center">Обери або скажи голосом</p>
+      <p className="mic-cap center">Обери варіант</p>
     </div>
   );
 }
@@ -636,7 +576,7 @@ function Result({
               animate={{ scale: 1, opacity: 1 }}
               transition={{ type: "spring", stiffness: 300, damping: 22 }}
             >
-              <div className="ava" style={{ background: colorFor(r.personId) }}>
+              <div className="ava" style={{ background: colorFor(r.personId, people) }}>
                 {name[0]?.toUpperCase()}
               </div>
               <div className="who">{name}</div>
@@ -648,7 +588,10 @@ function Result({
 
       {result.ok ? (
         <div className="settled">
-          <span className="tick">✓</span> усе розкладено · сума сходиться
+          <span className="tick">
+            <CheckIcon />
+          </span>{" "}
+          усе розкладено - сума сходиться
         </div>
       ) : (
         <div className="settled warn">Ще не все призначено</div>
@@ -657,16 +600,16 @@ function Result({
       <div className="mic-wrap sm">
         <motion.button
           className={`mic sm${correcting ? " on" : ""}`}
-          aria-label="Виправити голосом"
+          aria-label={correcting ? "Завершити" : "Виправити голосом"}
           onClick={onCorrect}
           whileHover={{ scale: 1.06 }}
           whileTap={{ scale: 0.94 }}
           transition={{ type: "spring", stiffness: 400, damping: 15 }}
         >
-          <MicIcon />
+          {correcting ? <StopIcon /> : <MicIcon />}
         </motion.button>
         <span className="mic-cap">
-          {correcting ? "Слухаю…" : "Виправити голосом · напр. «другу каву брав Сем»"}
+          {correcting ? "Слухаю... натисни, щоб завершити" : "Виправити голосом"}
         </span>
       </div>
 
@@ -678,6 +621,8 @@ function Result({
     </>
   );
 }
+
+/* --------------------------------- іконки --------------------------------- */
 
 function MicIcon() {
   return (
@@ -702,6 +647,32 @@ function CheckIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
       <path d="M5 13l4 4L19 7" />
+    </svg>
+  );
+}
+
+function StopIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <rect x="7" y="7" width="10" height="10" rx="2.5" />
+    </svg>
+  );
+}
+
+// Декоративна ілюстрація чека для лендінга (не дані - просто графіка).
+function ReceiptArt() {
+  return (
+    <svg className="hero-art" viewBox="0 0 120 150" fill="none" aria-hidden="true">
+      <path
+        d="M22 6 H98 V128 l-6.3 6 -6.3 -6 -6.3 6 -6.3 -6 -6.3 6 -6.3 -6 -6.3 6 -6.3 -6 -6.3 6 -6.3 -6 -6.3 6 -6.3 -6 V6 Z"
+        fill="var(--paper)"
+      />
+      <rect x="45" y="20" width="30" height="5" rx="2.5" fill="var(--paper-ink)" />
+      <rect x="32" y="40" width="56" height="3.5" rx="1.75" fill="var(--paper-line)" />
+      <rect x="32" y="52" width="56" height="3.5" rx="1.75" fill="var(--paper-line)" />
+      <rect x="32" y="64" width="56" height="3.5" rx="1.75" fill="var(--paper-line)" />
+      <rect x="32" y="76" width="34" height="3.5" rx="1.75" fill="var(--paper-line)" />
+      <rect x="32" y="96" width="56" height="8" rx="4" fill="var(--accent)" />
     </svg>
   );
 }
